@@ -1,0 +1,81 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: theatre 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-04-26 00:00+0000\n"
+"PO-Revision-Date: 2026-04-26 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "movies"
+msgstr "Фильмы"
+
+msgid "project_name"
+msgstr "Кинотеатр"
+
+msgid "project_description"
+msgstr "Лучший кинотеатр для всех"
+
+msgid "genre"
+msgstr "Жанр"
+
+msgid "genres"
+msgstr "Жанры"
+
+msgid "description"
+msgstr "Описание"
+
+msgid "name"
+msgstr "Имя"
+
+msgid "person"
+msgstr "Человек"
+
+msgid "persons"
+msgstr "Люди"
+
+msgid "movie"
+msgstr "Фильм"
+
+msgid "tv show"
+msgstr "Сериал"
+
+msgid "title"
+msgstr "Название"
+
+msgid "creation date"
+msgstr "Дата создания"
+
+msgid "rating"
+msgstr "Рейтинг"
+
+msgid "type"
+msgstr "Тип"
+
+msgid "film"
+msgstr "Фильм"
+
+msgid "films"
+msgstr "Фильмы"
+
+msgid "film genres"
+msgstr "Связи жанров и фильмов"
+
+msgid "actor"
+msgstr "Актер"
+
+msgid "director"
+msgstr "Режиссер"
+
+msgid "writer"
+msgstr "Сценарист"
+
+msgid "role"
+msgstr "Роль"
+
+msgid "film persons"
+msgstr "Связи людей и фильмов"

@@ -1,0 +1,81 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: theatre 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-04-26 00:00+0000\n"
+"PO-Revision-Date: 2026-04-26 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "movies"
+msgstr "Movies"
+
+msgid "project_name"
+msgstr "Movie theater"
+
+msgid "project_description"
+msgstr "The best movie theater for everyone"
+
+msgid "genre"
+msgstr "Genre"
+
+msgid "genres"
+msgstr "Genres"
+
+msgid "description"
+msgstr "Description"
+
+msgid "name"
+msgstr "Name"
+
+msgid "person"
+msgstr "Person"
+
+msgid "persons"
+msgstr "People"
+
+msgid "movie"
+msgstr "Movie"
+
+msgid "tv show"
+msgstr "TV Show"
+
+msgid "title"
+msgstr "Title"
+
+msgid "creation date"
+msgstr "Creation date"
+
+msgid "rating"
+msgstr "Rating"
+
+msgid "type"
+msgstr "Type"
+
+msgid "film"
+msgstr "Film"
+
+msgid "films"
+msgstr "Films"
+
+msgid "film genres"
+msgstr "Film genres"
+
+msgid "actor"
+msgstr "Actor"
+
+msgid "director"
+msgstr "Director"
+
+msgid "writer"
+msgstr "Writer"
+
+msgid "role"
+msgstr "Role"
+
+msgid "film persons"
+msgstr "Film persons"
