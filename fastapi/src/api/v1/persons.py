@@ -1,11 +1,12 @@
 from uuid import UUID
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.db.elasticsearch import get_elastic_client
-from src.db.redis import get_redis_client
-from src.models.person_api import PersonDetail, PersonSearchResult
-from src.services.persons import PersonService, get_person_service
+from db.elasticsearch import get_elastic_client
+from db.redis import get_redis_client
+from models.person_api import PersonDetail, PersonSearchResult
+from services.persons import PersonService, get_person_service
 
 router = APIRouter(prefix="/persons", tags=["persons"])
 
@@ -42,23 +43,48 @@ async def persons_search(
         query: Поисковый запрос (минимальная длина 1 символ).
         sort: Поле для сортировки (по умолчанию full_name, по возрастанию).
         role: Роль для фильтрации (actor, director, writer).
-        filter_role: Альтернативный параметр фильтрации по роли (alias: filter[role]).
-        page_size: Количество записей на страницу (от 1 до 100, по умолчанию 50).
+        filter_role: Альтернативный параметр фильтрации по роли
+            (alias: filter[role]).
+        page_size: Количество записей на страницу (от 1 до 100,
+            по умолчанию 50).
         page_number: Номер страницы (от 1, по умолчанию 1).
         service: Зависимость - сервис для работы с персонами.
 
     Returns:
-        list[PersonSearchResult]: Список найденных персон с краткой информацией о фильмах.
+        list[PersonSearchResult]: Список найденных персон с краткой
+            информацией о фильмах.
     """
     selected_role = filter_role or role
 
-    return await service.search_persons(
+    result = await service.search_persons(
         query=query,
         sort=sort,
         role=selected_role,
         page_size=page_size,
         page_number=page_number,
     )
+
+    persons = result["persons"]
+    total_hits = result["total_hits"]
+    total_pages = max(1, math.ceil(total_hits / page_size))
+    if page_number > total_pages:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[
+                {
+                    "type": "less_than_equal",
+                    "loc": ["query", "page_number"],
+                    "msg": (
+                        f"Input should be less than or equal to "
+                        f"{total_pages}"
+                    ),
+                    "input": str(page_number),
+                    "ctx": {"le": total_pages},
+                }
+            ],
+        )
+
+    return persons
 
 
 @router.get(
@@ -111,7 +137,8 @@ async def person_films(
 
     Args:
         person_id: Уникальный идентификатор персоны (UUID).
-        page_size: Количество записей на страницу (от 1 до 100, по умолчанию 50).
+        page_size: Количество записей на страницу (от 1 до 100,
+            по умолчанию 50).
         page_number: Номер страницы (от 1, по умолчанию 1).
         service: Зависимость - сервис для работы с персонами.
 
@@ -119,7 +146,8 @@ async def person_films(
         list[dict]: Список фильмов с информацией об участии персоны.
 
     Raises:
-        HTTPException: Если персона не найдена или не участвовала в фильмах (status_code=404).
+        HTTPException: Если персона не найдена или не участвовала в фильмах
+            (status_code=404).
     """
     films = await service.get_films_by_person(
         person_id=person_id,

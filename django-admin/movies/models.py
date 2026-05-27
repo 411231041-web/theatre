@@ -10,13 +10,15 @@ class TimeStampedMixin(models.Model):
     """
     Абстрактный миксин для отслеживания времени создания и изменения объектов.
 
-    Автоматически устанавливает временные метки при создании и обновлении записей
-    в базе данных.
+    Автоматически устанавливает временные метки при создании
+    и обновлении записей в базе данных.
 
     Attributes:
         created: Дата и время создания записи (устанавливается автоматически).
-        modified: Дата и время последнего изменения записи (обновляется автоматически).
+        modified: Дата и время последнего изменения записи
+            (обновляется автоматически).
     """
+
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
 
@@ -33,6 +35,7 @@ class UUIDMixin(models.Model):
     Attributes:
         id: Уникальный идентификатор UUID, используемый как первичный ключ.
     """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class Meta:
@@ -43,7 +46,8 @@ class Genre(UUIDMixin, TimeStampedMixin):
     """
     Модель жанра фильма.
 
-    Хранит информацию о жанре (кинематографический жанр, например, драма, комедия и т.д.)
+    Хранит информацию о жанре (кинематографический жанр, например,
+    драма, комедия и т.д.)
     и связана с фильмами через ManyToMany отношение.
 
     Attributes:
@@ -53,8 +57,9 @@ class Genre(UUIDMixin, TimeStampedMixin):
         created: Дата создания записи.
         modified: Дата последнего изменения.
     """
-    name = models.CharField(_('genre'), max_length=255)
-    description = models.TextField(_('description'), blank=True)
+
+    name = models.CharField(_("genre"), max_length=255)
+    description = models.TextField(_("description"), blank=True)
 
     def __str__(self):
         """Возвращает строковое представление жанра (его название)."""
@@ -62,17 +67,18 @@ class Genre(UUIDMixin, TimeStampedMixin):
 
     class Meta:
         db_table = 'content"."genre'
-        verbose_name = _('genre')
-        verbose_name_plural = _('genres')
-        ordering = ('name',)
+        verbose_name = _("genre")
+        verbose_name_plural = _("genres")
+        ordering = ("name",)
 
 
 class Person(UUIDMixin, TimeStampedMixin):
     """
     Модель личности (актёра, режиссёра, сценариста и т.д.).
 
-    Хранит информацию о людях, участвующих в создании фильмов (актёры, режиссёры,
-    сценаристы) и связана с фильмами через ManyToMany отношение.
+    Хранит информацию о людях, участвующих в создании фильмов
+    (актёры, режиссёры, сценаристы) и связана с фильмами через
+    ManyToMany отношение.
 
     Attributes:
         id: Уникальный идентификатор личности (UUID).
@@ -80,7 +86,8 @@ class Person(UUIDMixin, TimeStampedMixin):
         created: Дата создания записи.
         modified: Дата последнего изменения.
     """
-    full_name = models.CharField(_('name'), max_length=255)
+
+    full_name = models.CharField(_("name"), max_length=255)
 
     def __str__(self):
         """Возвращает строковое представление личности (её полное имя)."""
@@ -88,8 +95,8 @@ class Person(UUIDMixin, TimeStampedMixin):
 
     class Meta:
         db_table = 'content"."person'
-        verbose_name = _('person')
-        verbose_name_plural = _('persons')
+        verbose_name = _("person")
+        verbose_name_plural = _("persons")
 
 
 class FilmTypes(models.TextChoices):
@@ -100,8 +107,9 @@ class FilmTypes(models.TextChoices):
         MOVIE: Полнометражный фильм.
         TV_SHOW: Телевизионная передача или сериал.
     """
-    MOVIE = 'movie', _('movie')
-    TV_SHOW = 'tv show', _('tv show')
+
+    MOVIE = "movie", _("movie")
+    TV_SHOW = "tv show", _("tv show")
 
 
 class FilmWork(UUIDMixin, TimeStampedMixin):
@@ -123,11 +131,12 @@ class FilmWork(UUIDMixin, TimeStampedMixin):
         created: Дата создания записи.
         modified: Дата последнего изменения.
     """
-    title = models.CharField(_('title'), max_length=255)
-    description = models.TextField(_('description'), blank=True)
-    creation_date = models.DateField(_('creation date'), blank=True)
+
+    title = models.CharField(_("title"), max_length=255)
+    description = models.TextField(_("description"), blank=True)
+    creation_date = models.DateField(_("creation date"), blank=True)
     rating = models.FloatField(
-        _('rating'),
+        _("rating"),
         blank=True,
         validators=[
             MinValueValidator(1.0),
@@ -135,17 +144,17 @@ class FilmWork(UUIDMixin, TimeStampedMixin):
         ],
     )
     type = models.CharField(
-        _('type'),
+        _("type"),
         max_length=7,
         choices=FilmTypes.choices,
         default=FilmTypes.MOVIE,
     )
     genres = models.ManyToManyField(
         Genre,
-        through='GenreFilmWork',
-        verbose_name=_('genres'),
+        through="GenreFilmWork",
+        verbose_name=_("genres"),
     )
-    persons = models.ManyToManyField(Person, through='PersonFilmWork')
+    persons = models.ManyToManyField(Person, through="PersonFilmWork")
 
     def __str__(self):
         """Возвращает строковое представление фильма (его название)."""
@@ -153,13 +162,13 @@ class FilmWork(UUIDMixin, TimeStampedMixin):
 
     class Meta:
         db_table = 'content"."film_work'
-        verbose_name = _('film')
-        verbose_name_plural = _('films')
-        ordering = ['-creation_date']
+        verbose_name = _("film")
+        verbose_name_plural = _("films")
+        ordering = ["-creation_date"]
         indexes = [
             models.Index(
-                fields=['creation_date', 'rating'],
-                name='film_work_creation_rating_idx',
+                fields=["creation_date", "rating"],
+                name="film_work_creation_rating_idx",
             ),
         ]
 
@@ -177,10 +186,11 @@ class GenreFilmWork(UUIDMixin):
         film_work: Внешний ключ на фильм.
         created: Дата создания связи.
     """
+
     genre = models.ForeignKey(
-        'Genre',
+        "Genre",
         on_delete=models.CASCADE,
-        verbose_name=_('genre'),
+        verbose_name=_("genre"),
     )
     film_work = models.ForeignKey(FilmWork, on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
@@ -191,12 +201,12 @@ class GenreFilmWork(UUIDMixin):
 
     class Meta:
         db_table = 'content"."genre_film_work'
-        verbose_name = _('genre')
-        verbose_name_plural = _('film genres')
+        verbose_name = _("genre")
+        verbose_name_plural = _("film genres")
         constraints = [
             models.UniqueConstraint(
-                fields=['film_work', 'genre'],
-                name='film_work_genre_idx',
+                fields=["film_work", "genre"],
+                name="film_work_genre_idx",
             ),
         ]
 
@@ -210,9 +220,10 @@ class Roles(models.TextChoices):
         DIRECTOR: Режиссёр фильма.
         WRITER: Сценарист фильма.
     """
-    ACTOR = 'actor', _('actor')
-    DIRECTOR = 'director', _('director')
-    WRITER = 'writer', _('writer')
+
+    ACTOR = "actor", _("actor")
+    DIRECTOR = "director", _("director")
+    WRITER = "writer", _("writer")
 
 
 class PersonFilmWork(UUIDMixin):
@@ -220,8 +231,8 @@ class PersonFilmWork(UUIDMixin):
     Модель связи между фильмом и участником с указанием роли (through-модель).
 
     Промежуточная таблица для реализации ManyToMany отношения между фильмами
-    и участниками (актёры, режиссёры, сценаристы) с информацией о роли участника
-    и дате создания связи.
+    и участниками (актёры, режиссёры, сценаристы) с информацией о роли
+    участника и дате создания связи.
 
     Attributes:
         id: Уникальный идентификатор связи (UUID).
@@ -230,14 +241,15 @@ class PersonFilmWork(UUIDMixin):
         role: Роль участника в фильме (актёр, режиссёр, сценарист).
         created: Дата создания связи.
     """
+
     person = models.ForeignKey(
-        'Person',
+        "Person",
         on_delete=models.CASCADE,
-        verbose_name=_('person'),
+        verbose_name=_("person"),
     )
     film_work = models.ForeignKey(FilmWork, on_delete=models.CASCADE)
     role = models.CharField(
-        _('role'),
+        _("role"),
         max_length=10,
         choices=Roles.choices,
         default=Roles.ACTOR,
@@ -250,11 +262,11 @@ class PersonFilmWork(UUIDMixin):
 
     class Meta:
         db_table = 'content"."person_film_work'
-        verbose_name = _('person')
-        verbose_name_plural = _('film persons')
+        verbose_name = _("person")
+        verbose_name_plural = _("film persons")
         constraints = [
             models.UniqueConstraint(
-                fields=['film_work', 'person', 'role'],
-                name='film_work_person_role_idx',
+                fields=["film_work", "person", "role"],
+                name="film_work_person_role_idx",
             ),
         ]

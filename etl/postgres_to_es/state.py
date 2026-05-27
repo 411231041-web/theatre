@@ -79,13 +79,15 @@ class State:
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             temp_file = self.state_file.with_suffix(
-                f"{self.state_file.suffix}.tmp")
+                f"{self.state_file.suffix}.tmp"
+            )
             with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(self._state, f, indent=2, default=str)
             temp_file.replace(self.state_file)
         except IOError as e:
-            logger.error("Failed to save state file %s: %s",
-                         self.state_file, e)
+            logger.error(
+                "Failed to save state file %s: %s", self.state_file, e
+            )
 
     def get_cursor_timestamp(self) -> str:
         """Получаем текущую метку времени инкрементального курсора."""

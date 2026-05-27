@@ -14,17 +14,17 @@ from split_settings.tools import include
 from dotenv import load_dotenv
 from pathlib import Path
 
-ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
 include(
-    'components/secret_env.py',
-    'components/base.py',
-    'components/logging.py',
-    'components/installed_apps.py',
-    'components/middleware.py',
-    'components/templates.py',
-    'components/auth_validators.py',
-    'components/database.py',
-    'components/static_and_paths.py',
+    "components/secret_env.py",
+    "components/base.py",
+    "components/logging.py",
+    "components/installed_apps.py",
+    "components/middleware.py",
+    "components/templates.py",
+    "components/auth_validators.py",
+    "components/database.py",
+    "components/static_and_paths.py",
 )

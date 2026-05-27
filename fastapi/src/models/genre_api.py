@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from src.models.base import SchemaBase
+from models.base import SchemaBase
 
 
 class GenreShort(SchemaBase):

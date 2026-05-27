@@ -3,16 +3,14 @@ from uuid import UUID
 from elasticsearch import AsyncElasticsearch, NotFoundError
 from redis.asyncio import Redis
 
-from src.core.config import Settings, get_settings
-from src.models.person_api import PersonDetail, PersonSearchResult
-from src.services.cache import (
+from core.config import Settings, get_settings
+from models.person_api import PersonDetail, PersonSearchResult
+from services.cache import (
     build_cache_key,
     get_cached_json,
     get_cached_model,
-    get_cached_models,
     set_cached_json,
     set_cached_model,
-    set_cached_models,
 )
 
 
@@ -58,7 +56,8 @@ class PersonService:
             person_id: Уникальный идентификатор персоны (UUID).
 
         Returns:
-            PersonDetail | None: Детальная информация о персоне или None, если не найдена.
+            PersonDetail | None: Детальная информация о персоне или None,
+                если не найдена.
         """
         cache_key = build_cache_key(
             "persons:get_by_id",
@@ -98,19 +97,21 @@ class PersonService:
         role: str | None,
         page_size: int = 50,
         page_number: int = 1,
-    ) -> list[PersonSearchResult]:
+    ) -> dict[str, list[PersonSearchResult] | int]:
         """
         Выполнить поиск персон по запросу с фильтрацией по роли.
 
         Args:
             query: Поисковый запрос.
-            sort: Поле для сортировки (например, "-full_name" для убывающего порядка).
+            sort: Поле для сортировки (например, "-full_name" для
+                убывающего порядка).
             role: Роль для фильтрации (actor, director, writer).
             page_size: Количество записей на страницу (по умолчанию 50).
             page_number: Номер страницы (по умолчанию 1).
 
         Returns:
-            list[PersonSearchResult]: Список найденных персон с краткой информацией о фильмах.
+            list[PersonSearchResult]: Список найденных персон с краткой
+                информацией о фильмах.
         """
         cache_key = build_cache_key(
             "persons:search",
@@ -120,15 +121,25 @@ class PersonService:
             page_size=page_size,
             page_number=page_number,
         )
-        cached_persons = await get_cached_models(
-            self.redis,
-            cache_key,
-            PersonSearchResult,
-        )
-        if cached_persons is not None:
-            return cached_persons
+        cached_payload = await get_cached_json(self.redis, cache_key)
+        if isinstance(cached_payload, dict):
+            cached_persons = cached_payload.get("persons")
+            cached_total_hits = cached_payload.get("total_hits")
+            if (
+                isinstance(cached_persons, list)
+                and isinstance(cached_total_hits, int)
+            ):
+                persons = [
+                    PersonSearchResult.model_validate(item)
+                    for item in cached_persons
+                ]
+                return {"persons": persons, "total_hits": cached_total_hits}
 
         sort_order = "desc" if sort.startswith("-") else "asc"
+        sort_field = sort.lstrip("-")
+        # Use keyword subfield for text fields to avoid fielddata errors
+        if sort_field == "full_name":
+            sort_field = f"{sort_field}.raw"
 
         search_query: dict = {
             "bool": {
@@ -136,7 +147,8 @@ class PersonService:
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": ["full_name", "full_name.raw^2"],
+                            "fields": ["full_name^3", "full_name.raw"],
+                            "type": "best_fields",
                         }
                     }
                 ]
@@ -148,9 +160,7 @@ class PersonService:
                     "nested": {
                         "path": "films",
                         "query": {
-                            "term": {
-                                "films.roles": role,
-                            }
+                            "term": {"films.roles": role}
                         },
                     }
                 }
@@ -160,24 +170,34 @@ class PersonService:
             index=self.settings.elasticsearch_persons_index,
             body={
                 "query": search_query,
-                "sort": [{"full_name.raw": {"order": sort_order}}],
+                "sort": [{sort_field: {"order": sort_order}}],
                 "from": (page_number - 1) * page_size,
                 "size": page_size,
+                "_source": ["id", "full_name", "films"],
+                "track_total_hits": True,
             },
         )
 
+        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
+
         hits = response.get("hits", {}).get("hits", [])
         persons = [
-            self._map_person_search_result(hit.get("_source") or {})
+            self._map_person_search_result(hit.get("_source") or {}, role)
             for hit in hits
         ]
-        await set_cached_models(
+        await set_cached_json(
             self.redis,
             cache_key,
-            persons,
+            {
+                "persons": [
+                    person.model_dump(mode="json")
+                    for person in persons
+                ],
+                "total_hits": total_hits,
+            },
             self.settings.redis_cache_expire,
         )
-        return persons
+        return {"persons": persons, "total_hits": total_hits}
 
     async def get_films_by_person(
         self,
@@ -253,9 +273,13 @@ class PersonService:
         )
 
     @staticmethod
-    def _map_person_search_result(source: dict) -> PersonSearchResult:
+    def _map_person_search_result(
+        source: dict,
+        role: str | None = None,
+    ) -> PersonSearchResult:
         """
-        Преобразовать исходные данные Elasticsearch в объект PersonSearchResult.
+        Преобразовать исходные данные Elasticsearch в объект
+            PersonSearchResult.
 
         Args:
             source: Словарь с данными из Elasticsearch.
@@ -263,11 +287,16 @@ class PersonService:
         Returns:
             PersonSearchResult: Объект результата поиска персоны с фильмами.
         """
-        films = [
-            {"uuid": film["id"], "roles": film.get("roles", [])}
-            for film in source.get("films", [])
-            if film.get("id")
-        ]
+        films: list[dict] = []
+        for film in source.get("films", []):
+            if not film.get("id"):
+                continue
+            film_roles = film.get("roles", [])
+            if role is None:
+                films.append({"uuid": film["id"], "roles": film_roles})
+            else:
+                if role in film_roles:
+                    films.append({"uuid": film["id"], "roles": [role]})
         return PersonSearchResult(
             uuid=source["id"],
             full_name=source.get("full_name", ""),
@@ -289,17 +318,6 @@ def get_person_service(
     Returns:
         PersonService: Экземпляр сервиса для работы с персонами.
     """
-    return PersonService(
-        elastic=elastic,
-        redis=redis,
-        settings=get_settings(),
-    )
-
-
-def get_person_service(
-    elastic: AsyncElasticsearch,
-    redis: Redis,
-) -> PersonService:
     return PersonService(
         elastic=elastic,
         redis=redis,

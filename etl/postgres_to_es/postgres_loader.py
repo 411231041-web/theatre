@@ -24,6 +24,7 @@ class PostgresLoader:
 
     def connect(self) -> None:
         """Устанавливаем соединение с PostgreSQL."""
+
         def _connect():
             self._conn = psycopg.connect(self.dsn)
             logger.info("Connected to PostgreSQL")
@@ -53,6 +54,7 @@ class PostgresLoader:
         Returns:
             Список кортежей (film_id, changed_at_iso)
         """
+
         def _get_changed_films():
             if not self._conn:
                 self.connect()
@@ -64,7 +66,7 @@ class PostgresLoader:
                     "cursor_timestamp": cursor_timestamp,
                     "cursor_id": cursor_id,
                     "limit": batch_size,
-                }
+                },
             )
             rows = cursor.fetchall()
             cursor.close()
@@ -91,10 +93,7 @@ class PostgresLoader:
                 self.connect()
 
             cursor = self._conn.cursor()
-            cursor.execute(
-                queries.FILM_PAYLOAD_QUERY,
-                {"film_ids": film_ids}
-            )
+            cursor.execute(queries.FILM_PAYLOAD_QUERY, {"film_ids": film_ids})
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
             cursor.close()
@@ -132,7 +131,7 @@ class PostgresLoader:
                     "cursor_timestamp": cursor_timestamp,
                     "cursor_id": cursor_id,
                     "limit": batch_size,
-                }
+                },
             )
             rows = cursor.fetchall()
             cursor.close()
@@ -160,8 +159,7 @@ class PostgresLoader:
 
             cursor = self._conn.cursor()
             cursor.execute(
-                queries.GENRE_PAYLOAD_QUERY,
-                {"genre_ids": genre_ids}
+                queries.GENRE_PAYLOAD_QUERY, {"genre_ids": genre_ids}
             )
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
@@ -200,7 +198,7 @@ class PostgresLoader:
                     "cursor_timestamp": cursor_timestamp,
                     "cursor_id": cursor_id,
                     "limit": batch_size,
-                }
+                },
             )
             rows = cursor.fetchall()
             cursor.close()
@@ -228,8 +226,7 @@ class PostgresLoader:
 
             cursor = self._conn.cursor()
             cursor.execute(
-                queries.PERSON_PAYLOAD_QUERY,
-                {"person_ids": person_ids}
+                queries.PERSON_PAYLOAD_QUERY, {"person_ids": person_ids}
             )
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()

@@ -1,6 +1,8 @@
 # django-admin
 
-`django-admin` — Django-приложение для администрирования и API проекта Theatre. Внутри есть административная панель, модуль `movies` и JSON API, доступный через `movies.api`.
+`django-admin` — Django-приложение для администрирования и API проекта
+Theatre. Внутри есть административная панель, модуль `movies` и JSON API,
+доступный через `movies.api`.
 
 ## Возможности
 
@@ -14,7 +16,8 @@
 
 - `manage.py` — точка входа для команд Django.
 - `config/settings.py` — сборка настроек через `split-settings`.
-- `config/components/` — отдельные блоки настроек: база данных, шаблоны, middleware, логирование и т.д.
+- `config/components/` — отдельные блоки настроек: база данных, шаблоны,
+  middleware, логирование и т.д.
 - `config/urls.py` — корневые маршруты проекта.
 - `movies/` — основное приложение с моделями и API.
 
@@ -42,7 +45,8 @@
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 
-Если проект запускается через Docker Compose, эти значения обычно передаются через файл `.env` в корне репозитория.
+Если проект запускается через Docker Compose, эти значения обычно
+передаются через файл `.env` в корне репозитория.
 
 ## Локальный запуск
 
@@ -75,7 +79,9 @@
 
 ## Запуск через Docker
 
-В корне репозитория используется `docker-compose.yml`. Django-приложение собирается из каталога `django-admin`, а полный стек поднимается вместе с PostgreSQL, Nginx, Elasticsearch, Redis и ETL-сервисами.
+В корне репозитория используется `docker-compose.yml`. Django-приложение
+собирается из каталога `django-admin`, а полный стек поднимается вместе
+с PostgreSQL, Nginx, Elasticsearch, Redis и ETL-сервисами.
 
 Пример запуска:
 
@@ -83,7 +89,8 @@
 docker compose up --build
 ```
 
-После старта админка будет доступна через Nginx, а сам Django-контейнер выполнит миграции, `compilemessages` и `collectstatic` автоматически.
+После старта админка будет доступна через Nginx, а сам Django-контейнер
+выполнит миграции, `compilemessages` и `collectstatic` автоматически.
 
 ## Полезные команды
 

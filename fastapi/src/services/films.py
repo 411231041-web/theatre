@@ -3,19 +3,19 @@ from uuid import UUID
 from elasticsearch import AsyncElasticsearch, NotFoundError
 from redis.asyncio import Redis
 
-from src.core.config import Settings, get_settings
-from src.models.film_api import (
+from core.config import Settings, get_settings
+from models.film_api import (
     FilmDetail,
     FilmShort,
     GenreInFilm,
     PersonInFilm,
 )
-from src.services.cache import (
+from services.cache import (
     build_cache_key,
+    get_cached_json,
     get_cached_model,
-    get_cached_models,
+    set_cached_json,
     set_cached_model,
-    set_cached_models,
 )
 
 
@@ -61,7 +61,8 @@ class FilmService:
             film_id: Уникальный идентификатор фильма (UUID).
 
         Returns:
-            FilmDetail | None: Детальная информация о фильме или None, если не найден.
+            FilmDetail | None: Детальная информация о фильме или None,
+                если не найден.
         """
         cache_key = build_cache_key("films:get_by_id", film_id=str(film_id))
         cached_film = await get_cached_model(self.redis, cache_key, FilmDetail)
@@ -93,18 +94,21 @@ class FilmService:
         page_number: int,
         sort: str,
         genre: str | None,
-    ) -> list[FilmShort]:
+        title: str | None = None,
+    ) -> dict[str, list[FilmShort] | int]:
         """
-        Получить список фильмов с пагинацией, сортировкой и фильтрацией по жанру.
+        Получить список фильмов с пагинацией и фильтрацией по жанру.
 
         Args:
             page_size: Количество записей на страницу.
             page_number: Номер страницы.
-            sort: Поле для сортировки (например, "-imdb_rating" для убывающего порядка).
+            sort: Поле для сортировки (например, "-imdb_rating" для
+                убывающего порядка).
             genre: Идентификатор жанра для фильтрации.
 
         Returns:
-            list[FilmShort]: Список кратких данных о фильмах.
+            dict[str, list[FilmShort] | int]: Словарь с списком кратких
+                данных о фильмах и общим количеством результатов.
         """
         cache_key = build_cache_key(
             "films:list",
@@ -112,45 +116,166 @@ class FilmService:
             page_number=page_number,
             sort=sort,
             genre=genre,
+            title=title,
         )
-        cached_films = await get_cached_models(
-            self.redis,
-            cache_key,
-            FilmShort,
-        )
-        if cached_films is not None:
-            return cached_films
+        cached_payload = await get_cached_json(self.redis, cache_key)
+        if isinstance(cached_payload, dict):
+            cached_films = cached_payload.get("films")
+            cached_total_hits = cached_payload.get("total_hits")
+            if (
+                isinstance(cached_films, list)
+                and isinstance(cached_total_hits, int)
+            ):
+                films = [FilmShort.model_validate(item)
+                         for item in cached_films]
+                return {"films": films, "total_hits": cached_total_hits}
 
         sort_order = "desc" if sort.startswith("-") else "asc"
         sort_field = sort.lstrip("-")
 
-        query: dict = {"match_all": {}}
-        if genre is not None:
-            query = {"term": {"genres": str(genre)}}
+        if title is not None and genre is not None:
+            query_body = {
+                "bool": {
+                    "must": [
+                        {"term": {"genre": str(genre)}},
+                        {
+                            "match_phrase": {
+                                "title": title,
+                            }
+                        },
+                    ]
+                }
+            }
+        elif title is not None:
+            query_body = {
+                "match_phrase": {
+                    "title": title,
+                }
+            }
+        elif genre is not None:
+            query_body = {"term": {"genre": str(genre)}}
+        else:
+            query_body = {"match_all": {}}
 
         response = await self.elastic.search(
             index=self.settings.elasticsearch_index,
             body={
-                "query": query,
+                "query": query_body,
                 "sort": [{sort_field: {"order": sort_order}}],
                 "from": (page_number - 1) * page_size,
                 "size": page_size,
-                "_source": ["id", "title", "imdb_rating"],
+                "_source": [
+                    "id",
+                    "title",
+                    "imdb_rating",
+                    "description",
+                    "genre",
+                ],
+                "track_total_hits": True,
             },
         )
 
+        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
+
         hits = response.get("hits", {}).get("hits", [])
         films = [
-            self._map_film_short(hit.get("_source") or {})
-            for hit in hits
+            self._map_film_short(hit.get("_source") or {}) for hit in hits
         ]
-        await set_cached_models(
+        await set_cached_json(
             self.redis,
             cache_key,
-            films,
+            {
+                "films": [film.model_dump(mode="json") for film in films],
+                "total_hits": total_hits,
+            },
             self.settings.redis_cache_expire,
         )
-        return films
+        return {"films": films, "total_hits": total_hits}
+
+    async def search_films(
+        self,
+        *,
+        query: str,
+        page_size: int,
+        page_number: int,
+        sort: str,
+    ) -> dict[str, list[FilmShort] | int]:
+        """
+        Поиск фильмов по текстовому запросу с пагинацией и сортировкой.
+
+        Args:
+            query: Текстовый запрос для поиска (по названию и описанию).
+            page_size: Количество записей на страницу.
+            page_number: Номер страницы.
+            sort: Поле для сортировки (например, "-imdb_rating" для убывающего
+                  порядка).
+
+        Returns:
+            dict[str, list[FilmShort] | int]: Словарь с списком кратких
+                данных о найденных фильмах и общим количеством результатов.
+        """
+        cache_key = build_cache_key(
+            "films:search",
+            query=query,
+            page_size=page_size,
+            page_number=page_number,
+            sort=sort,
+        )
+        cached_payload = await get_cached_json(self.redis, cache_key)
+        if isinstance(cached_payload, dict):
+            cached_films = cached_payload.get("films")
+            cached_total_hits = cached_payload.get("total_hits")
+            if (
+                isinstance(cached_films, list)
+                and isinstance(cached_total_hits, int)
+            ):
+                films = [FilmShort.model_validate(item)
+                         for item in cached_films]
+                return {"films": films, "total_hits": cached_total_hits}
+
+        sort_order = "desc" if sort.startswith("-") else "asc"
+        sort_field = sort.lstrip("-")
+
+        response = await self.elastic.search(
+            index=self.settings.elasticsearch_index,
+            body={
+                "query": {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "description"],
+                        "type": "best_fields",
+                    }
+                },
+                "sort": [{sort_field: {"order": sort_order}}],
+                "from": (page_number - 1) * page_size,
+                "size": page_size,
+                "_source": [
+                    "id",
+                    "title",
+                    "imdb_rating",
+                    "description",
+                    "genre",
+                ],
+                "track_total_hits": True,
+            },
+        )
+
+        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
+
+        hits = response.get("hits", {}).get("hits", [])
+        films = [
+            self._map_film_short(hit.get("_source") or {}) for hit in hits
+        ]
+        await set_cached_json(
+            self.redis,
+            cache_key,
+            {
+                "films": [film.model_dump(mode="json") for film in films],
+                "total_hits": total_hits,
+            },
+            self.settings.redis_cache_expire,
+        )
+        return {"films": films, "total_hits": total_hits}
 
     @staticmethod
     def _map_film_short(source: dict) -> FilmShort:
@@ -167,6 +292,8 @@ class FilmService:
             uuid=source["id"],
             title=source.get("title", ""),
             imdb_rating=source.get("imdb_rating"),
+            description=source.get("description"),
+            genres=source.get("genre", []),
         )
 
     @staticmethod
@@ -198,7 +325,7 @@ class FilmService:
         """
         genres = [
             GenreInFilm(name=genre_name)
-            for genre_name in source.get("genres", [])
+            for genre_name in source.get("genre", [])
             if genre_name
         ]
 

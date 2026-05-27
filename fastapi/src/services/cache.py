@@ -50,7 +50,8 @@ async def get_cached_model(
         model_cls: Класс модели для валидации.
 
     Returns:
-        ModelType | None: Экземпляр модели или None, если данные не найдены или невалидны.
+        ModelType | None: Экземпляр модели или None, если данные не
+            найдены или невалидны.
     """
     try:
         payload = await redis.get(key)
@@ -101,7 +102,8 @@ async def get_cached_models(
         model_cls: Класс модели для валидации.
 
     Returns:
-        list[ModelType] | None: Список моделей или None, если данные не найдены или невалидны.
+        list[ModelType] | None: Список моделей или None, если данные не
+            найдены или невалидны.
     """
     try:
         payload = await redis.get(key)
@@ -159,7 +161,8 @@ async def get_cached_json(
         key: Ключ кэша.
 
     Returns:
-        Any | None: Данные в формате JSON или None, если данные не найдены или невалидны.
+        Any | None: Данные в формате JSON или None, если данные не
+            найдены или невалидны.
     """
     try:
         payload = await redis.get(key)

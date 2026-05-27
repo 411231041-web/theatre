@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     elasticsearch_index: str = Field(
         default="movies",
-        alias="ELASTICSEARCH_INDEX",
+        alias="ELASTICSEARCH_FILMS_INDEX",
     )
     """
     Имя индекса для фильмов в Elasticsearch (по умолчанию: movies).

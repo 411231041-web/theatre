@@ -4,9 +4,9 @@ from uuid import UUID
 
 from pydantic import Field
 
-from src.models.base import SchemaBase
-from src.models.genre import GenreShort
-from src.models.person import PersonInFilm
+from models.base import SchemaBase
+from models.genre import GenreShort
+from models.person import PersonInFilm
 
 
 class FilmType(str, Enum):

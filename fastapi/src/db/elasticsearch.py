@@ -1,6 +1,6 @@
 from elasticsearch import AsyncElasticsearch
 
-from src.core.config import get_settings
+from core.config import get_settings
 
 _client: AsyncElasticsearch | None = None
 """

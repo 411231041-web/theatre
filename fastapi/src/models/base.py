@@ -10,6 +10,7 @@ class SchemaBase(BaseModel):
     - populate_by_name: Позволяет использовать как alias, так и имя поля.
     - str_strip_whitespace: Автоматически удаляет пробелы из строк.
     """
+
     model_config = ConfigDict(
         from_attributes=True,
         populate_by_name=True,

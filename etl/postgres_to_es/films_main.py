@@ -29,7 +29,8 @@ class FilmsETLPipeline:
         # Инициализируем компоненты
         self.state = State(self.settings.etl_state_file)
         self.postgres_loader = PostgresLoader(
-            self.settings.postgres_dsn, self.retry_config)
+            self.settings.postgres_dsn, self.retry_config
+        )
         self.es_saver = ElasticsearchSaver(
             self.settings.elasticsearch_url,
             self.settings.elasticsearch_index,

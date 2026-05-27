@@ -24,6 +24,7 @@ class ElasticsearchSaver:
 
     def connect(self) -> None:
         """Устанавливаем соединение с Elasticsearch."""
+
         def _connect():
             self._client = Elasticsearch([self.es_url])
             # Проверяем соединение
@@ -40,6 +41,7 @@ class ElasticsearchSaver:
 
     def ensure_index_exists(self, settings: Dict[str, Any]) -> None:
         """Проверяем, что индекс существует и имеет корректный маппинг."""
+
         def _ensure():
             if not self._client:
                 self.connect()
@@ -47,7 +49,8 @@ class ElasticsearchSaver:
             if not self._client.indices.exists(index=self.index_name):
                 logger.info(f"Creating index {self.index_name}")
                 self._client.indices.create(
-                    index=self.index_name, body=settings)
+                    index=self.index_name, body=settings
+                )
             else:
                 logger.info(f"Index {self.index_name} already exists")
 

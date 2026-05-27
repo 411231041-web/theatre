@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from src.api.v1 import persons as persons_api
-from src.models.person_api import PersonDetail, PersonSearchResult
+from api.v1 import persons as persons_api
+from models.person_api import PersonDetail, PersonSearchResult
 
 
 class StubPersonService:
@@ -25,9 +25,12 @@ def test_persons_search_returns_data_and_forwards_filters(client):
     Проверяет, что API корректно передает параметры фильтрации в сервис.
     """
     service = StubPersonService()
-    service.search_persons.return_value = [
-        PersonSearchResult(uuid=uuid4(), full_name="George", films=[]),
-    ]
+    service.search_persons.return_value = {
+        "persons": [
+            PersonSearchResult(uuid=uuid4(), full_name="George", films=[]),
+        ],
+        "total_hits": 10,
+    }
 
     app = client.app
     app.dependency_overrides[persons_api.get_service] = lambda: service
@@ -47,6 +50,31 @@ def test_persons_search_returns_data_and_forwards_filters(client):
         page_size=5,
         page_number=2,
     )
+
+
+def test_persons_search_rejects_page_number_above_total_pages(client):
+    """
+    Тест ограничения page_number для поиска персон.
+
+    Проверяет, что API возвращает 422, если запрошена страница
+    больше, чем доступно.
+    """
+    service = StubPersonService()
+    service.search_persons.return_value = {
+        "persons": [],
+        "total_hits": 0,
+    }
+
+    app = client.app
+    app.dependency_overrides[persons_api.get_service] = lambda: service
+
+    response = client.get(
+        "/api/v1/persons/search"
+        "?query=geo&page_size=50&page_number=2"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]
 
 
 def test_persons_search_rejects_empty_query(client):

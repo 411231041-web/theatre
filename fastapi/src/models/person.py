@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from src.models.base import SchemaBase
+from models.base import SchemaBase
 
 
 class PersonRole(str, Enum):

@@ -2,13 +2,6 @@ services:
   service:
     build:
       context: django-admin
-      args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
-        http_proxy: ${http_proxy:-}
-        https_proxy: ${https_proxy:-}
-        no_proxy: ${no_proxy:-}
     volumes:
       - static_volume:/var/www/static
     expose:
@@ -28,25 +21,16 @@ services:
   fastapi:
     build:
       context: ./fastapi
+      dockerfile: Dockerfile
     ports:
-      - "8001:8001"
-    volumes:
-      - ./fastapi:/app
-    environment:
-      - ELASTICSEARCH_HOST=elasticsearch
-      - ELASTICSEARCH_PORT=9200
-      - ELASTICSEARCH_INDEX=movies
-      - ELASTICSEARCH_GENRES_INDEX=genres
-      - ELASTICSEARCH_PERSONS_INDEX=persons
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_CACHE_EXPIRE=300
+      - "8000:8000"
+    env_file:
+      - .env
     depends_on:
       elasticsearch:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 
   redis:
     image: redis:7-alpine
@@ -111,10 +95,6 @@ services:
     env_file:
       - .env
     environment:
-      - ELASTICSEARCH_HOST=elasticsearch
-      - ELASTICSEARCH_PORT=9200
-      - SQL_HOST=theatre-db
-      - ELASTICSEARCH_FILMS_INDEX=movies
       - ETL_STATE_FILE=/state/etl_films_state.json
     volumes:
       - ./etl/postgres_to_es:/app/postgres_to_es
@@ -138,10 +118,6 @@ services:
     env_file:
       - .env
     environment:
-      - ELASTICSEARCH_HOST=elasticsearch
-      - ELASTICSEARCH_PORT=9200
-      - ELASTICSEARCH_FILMS_INDEX=genres
-      - SQL_HOST=theatre-db
       - ETL_STATE_FILE=/state/etl_genres_state.json
     volumes:
       - ./etl/postgres_to_es:/app/postgres_to_es
@@ -166,10 +142,6 @@ services:
     env_file:
       - .env
     environment:
-      - ELASTICSEARCH_HOST=elasticsearch
-      - ELASTICSEARCH_PORT=9200
-      - ELASTICSEARCH_FILMS_INDEX=persons
-      - SQL_HOST=theatre-db
       - ETL_STATE_FILE=/state/etl_persons_state.json
     volumes:
       - ./etl/postgres_to_es:/app/postgres_to_es

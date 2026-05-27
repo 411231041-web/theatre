@@ -3,14 +3,14 @@ from uuid import UUID
 from elasticsearch import AsyncElasticsearch, NotFoundError
 from redis.asyncio import Redis
 
-from src.core.config import Settings, get_settings
-from src.models.genre_api import GenreDetail, GenreShort
-from src.services.cache import (
+from core.config import Settings, get_settings
+from models.genre_api import GenreDetail, GenreShort
+from services.cache import (
     build_cache_key,
+    get_cached_json,
     get_cached_model,
-    get_cached_models,
     set_cached_model,
-    set_cached_models,
+    set_cached_json,
 )
 
 
@@ -56,7 +56,8 @@ class GenreService:
             genre_id: Уникальный идентификатор жанра (UUID).
 
         Returns:
-            GenreDetail | None: Детальная информация о жанре или None, если не найден.
+            GenreDetail | None: Детальная информация о жанре или None,
+                если не найден.
         """
         cache_key = build_cache_key("genres:get_by_id", genre_id=str(genre_id))
         cached_genre = await get_cached_model(
@@ -92,18 +93,21 @@ class GenreService:
         name: str | None,
         page_size: int = 50,
         page_number: int = 1,
-    ) -> list[GenreShort]:
+    ) -> dict[str, list[GenreShort] | int]:
         """
-        Получить список жанров с пагинацией, сортировкой и фильтрацией по названию.
+        Получить список жанров с пагинацией и фильтрацией по названию.
 
         Args:
-            sort: Поле для сортировки (например, "-name" для убывающего порядка).
+            sort: Поле для сортировки (например, "-name" для
+                убывающего порядка).
             name: Название жанра для поиска (поиск по частичному совпадению).
             page_size: Количество записей на страницу (по умолчанию 50).
             page_number: Номер страницы (по умолчанию 1).
 
         Returns:
-            list[GenreShort]: Список кратких данных о жанрах.
+            dict[str, list[GenreShort] | int]:
+                Словарь с списком кратких данных о жанрах и
+                общим количеством записей.
         """
         cache_key = build_cache_key(
             "genres:list",
@@ -112,13 +116,16 @@ class GenreService:
             page_size=page_size,
             page_number=page_number,
         )
-        cached_genres = await get_cached_models(
-            self.redis,
-            cache_key,
-            GenreShort,
-        )
-        if cached_genres is not None:
-            return cached_genres
+        cached_payload = await get_cached_json(self.redis, cache_key)
+        if isinstance(cached_payload, dict):
+            cached_genres = cached_payload.get("genres")
+            cached_total_hits = cached_payload.get("total_hits")
+            if (
+                isinstance(cached_genres, list)
+                and isinstance(cached_total_hits, int)
+            ):
+                genres = [GenreShort(**genre) for genre in cached_genres]
+                return {"genres": genres, "total_hits": cached_total_hits}
 
         sort_order = "desc" if sort.startswith("-") else "asc"
         query: dict = {"match_all": {}}
@@ -139,21 +146,29 @@ class GenreService:
                 "from": (page_number - 1) * page_size,
                 "size": page_size,
                 "_source": ["id", "name"],
+                "track_total_hits": True,
             },
         )
 
+        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
+
         hits = response.get("hits", {}).get("hits", [])
         genres = [
-            self._map_genre_short(hit.get("_source") or {})
-            for hit in hits
+            self._map_genre_short(hit.get("_source") or {}) for hit in hits
         ]
-        await set_cached_models(
+        # Сохраняем в кеш структуру с данными и общим числом результатов,
+        # чтобы при последующих запросах можно было получить списки и
+        # общее количество без обращения в Elasticsearch.
+        await set_cached_json(
             self.redis,
             cache_key,
-            genres,
+            {
+                "genres": [g.model_dump(mode="json") for g in genres],
+                "total_hits": total_hits,
+            },
             self.settings.redis_cache_expire,
         )
-        return genres
+        return {"genres": genres, "total_hits": total_hits}
 
     @staticmethod
     def _map_genre_short(source: dict) -> GenreShort:

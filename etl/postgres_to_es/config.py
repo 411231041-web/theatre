@@ -9,38 +9,50 @@ class Settings(BaseSettings):
 
     # Настройки PostgreSQL
     postgres_host: str = Field(
-        default="localhost", validation_alias="SQL_HOST")
+        default="localhost", validation_alias="SQL_HOST"
+    )
     postgres_port: int = Field(default=5432, validation_alias="SQL_PORT")
-    postgres_db: str = Field(default="movies_database",
-                             validation_alias="POSTGRES_DB")
+    postgres_db: str = Field(
+        default="movies_database", validation_alias="POSTGRES_DB"
+    )
     postgres_user: str = Field(
-        default="postgres", validation_alias="POSTGRES_USER")
+        default="postgres", validation_alias="POSTGRES_USER"
+    )
     postgres_password: str = Field(
-        default="postgres", validation_alias="POSTGRES_PASSWORD")
+        default="postgres", validation_alias="POSTGRES_PASSWORD"
+    )
 
     # Настройки Elasticsearch
     elasticsearch_host: str = Field(
-        default="localhost", validation_alias="ELASTICSEARCH_HOST")
+        default="localhost", validation_alias="ELASTICSEARCH_HOST"
+    )
     elasticsearch_port: int = Field(
-        default=9200, validation_alias="ELASTICSEARCH_PORT")
+        default=9200, validation_alias="ELASTICSEARCH_PORT"
+    )
     elasticsearch_index: str = Field(
-        default="movies", validation_alias="ELASTICSEARCH_FILMS_INDEX")
+        default="movies", validation_alias="ELASTICSEARCH_FILMS_INDEX"
+    )
 
     # Настройки ETL
     etl_state_file: str = Field(
-        default="etl_films_state.json", validation_alias="ETL_STATE_FILE")
+        default="etl_films_state.json", validation_alias="ETL_STATE_FILE"
+    )
     batch_size: int = Field(default=100, validation_alias="ETL_BATCH_SIZE")
     poll_interval: int = Field(
-        default=10, validation_alias="ETL_POLL_INTERVAL")
+        default=10, validation_alias="ETL_POLL_INTERVAL"
+    )
 
     # Настройки повторных попыток
     max_retries: int = Field(default=5, validation_alias="ETL_MAX_RETRIES")
     initial_backoff: float = Field(
-        default=1.0, validation_alias="ETL_INITIAL_BACKOFF")
+        default=1.0, validation_alias="ETL_INITIAL_BACKOFF"
+    )
     max_backoff: float = Field(
-        default=60.0, validation_alias="ETL_MAX_BACKOFF")
+        default=60.0, validation_alias="ETL_MAX_BACKOFF"
+    )
     backoff_multiplier: float = Field(
-        default=2.0, validation_alias="ETL_BACKOFF_MULTIPLIER")
+        default=2.0, validation_alias="ETL_BACKOFF_MULTIPLIER"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

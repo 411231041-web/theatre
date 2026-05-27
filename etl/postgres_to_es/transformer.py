@@ -22,12 +22,15 @@ def transform_film_to_document(film_data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Нормализуем массивы из агрегатов PostgreSQL JSONB
     genres = [str(g) for g in (film_data.get("genres") or []) if g]
-    directors_names = [str(name) for name in (
-        film_data.get("directors_names") or []) if name]
-    actors_names = [str(name) for name in (
-        film_data.get("actors_names") or []) if name]
-    writers_names = [str(name) for name in (
-        film_data.get("writers_names") or []) if name]
+    directors_names = [
+        str(name) for name in (film_data.get("directors_names") or []) if name
+    ]
+    actors_names = [
+        str(name) for name in (film_data.get("actors_names") or []) if name
+    ]
+    writers_names = [
+        str(name) for name in (film_data.get("writers_names") or []) if name
+    ]
 
     # Обрабатываем вложенные объекты с идентификатором и именем
     directors = []
@@ -155,10 +158,12 @@ def transform_person_to_document(
             continue
 
         roles = [str(role) for role in (film.get("roles") or []) if role]
-        films.append({
-            "id": str(film_id),
-            "roles": roles,
-        })
+        films.append(
+            {
+                "id": str(film_id),
+                "roles": roles,
+            }
+        )
 
     return {
         "id": str(person_data.get("id")),

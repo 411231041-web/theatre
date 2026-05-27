@@ -1,11 +1,12 @@
+import math
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.db.elasticsearch import get_elastic_client
-from src.db.redis import get_redis_client
-from src.models.genre_api import GenreDetail, GenreShort
-from src.services.genres import GenreService, get_genre_service
+from db.elasticsearch import get_elastic_client
+from db.redis import get_redis_client
+from models.genre_api import GenreDetail, GenreShort
+from services.genres import GenreService, get_genre_service
 
 router = APIRouter(prefix="/genres", tags=["genres"])
 
@@ -21,7 +22,7 @@ def get_service() -> GenreService:
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[GenreShort],
     summary="Список жанров",
     description="Возвращает список всех жанров с пагинацией.",
@@ -40,8 +41,10 @@ async def genres_list(
     Args:
         sort: Поле для сортировки (по умолчанию name, по возрастанию).
         name: Название жанра для поиска (поиск по частичному совпадению).
-        filter_name: Альтернативный параметр фильтрации по названию (alias: filter[name]).
-        page_size: Количество записей на страницу (от 1 до 100, по умолчанию 50).
+        filter_name: Альтернативный параметр фильтрации по названию
+            (alias: filter[name]).
+        page_size: Количество записей на страницу (от 1 до 100,
+            по умолчанию 50).
         page_number: Номер страницы (от 1, по умолчанию 1).
         service: Зависимость - сервис для работы с жанрами.
 
@@ -50,12 +53,34 @@ async def genres_list(
     """
     selected_name = filter_name or name
 
-    return await service.list_genres(
+    result = await service.list_genres(
         sort=sort,
         name=selected_name,
         page_size=page_size,
         page_number=page_number,
     )
+
+    genres = result["genres"]
+    total_hits = result["total_hits"]
+    total_pages = max(1, math.ceil(total_hits / page_size))
+    if page_number > total_pages:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[
+                {
+                    "type": "less_than_equal",
+                    "loc": ["query", "page_number"],
+                    "msg": (
+                        f"Input should be less than or equal to "
+                        f"{total_pages}"
+                    ),
+                    "input": str(page_number),
+                    "ctx": {"le": total_pages},
+                }
+            ],
+        )
+
+    return genres
 
 
 @router.get(

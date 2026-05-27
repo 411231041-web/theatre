@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from src.models.base import SchemaBase
+from models.base import SchemaBase
 
 
 class FilmShort(SchemaBase):
@@ -13,11 +13,13 @@ class FilmShort(SchemaBase):
         uuid: Уникальный идентификатор фильма.
         title: Название фильма.
         imdb_rating: Рейтинг IMDb (опционально).
+        genres: Список жанров фильма.
     """
 
     uuid: UUID
     title: str
     imdb_rating: float | None = Field(default=None)
+    genres: list[str] = Field(default_factory=list)
 
 
 class GenreInFilm(SchemaBase):

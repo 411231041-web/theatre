@@ -22,6 +22,8 @@ docker compose down
 
   - Установите зависимости: `pip install -r fastapi/requirements.txt`.
   - Запустите: `uvicorn fastapi.src.main:app --reload --port 8001`.
+  - Документация OpenAPI доступна по адресу: `http://localhost:8001/api/openapi`.
+  - JSON-схема OpenAPI доступна по адресу: `http://localhost:8001/api/openapi.json`.
 
 - Django (админ):
 

@@ -4,9 +4,9 @@
 Содержит схемы Pydantic для работы с фильмами, жанрами и персоналиями.
 """
 
-from src.models.film import Film, FilmBase, FilmType
-from src.models.genre import Genre, GenreBase, GenreShort
-from src.models.person import Person, PersonBase, PersonInFilm, PersonRole
+from models.film import Film, FilmBase, FilmType
+from models.genre import Genre, GenreBase, GenreShort
+from models.person import Person, PersonBase, PersonInFilm, PersonRole
 
 __all__ = [
     "Film",

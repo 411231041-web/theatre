@@ -66,6 +66,7 @@ class RetryConfig:
                     delay = min(delay * self.multiplier, self.max_delay)
                 else:
                     logger.error(
-                        f"All {self.max_retries + 1} attempts failed: {e}")
+                        f"All {self.max_retries + 1} attempts failed: {e}"
+                    )
 
         raise last_exception

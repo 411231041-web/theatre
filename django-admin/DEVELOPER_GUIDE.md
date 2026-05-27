@@ -1,10 +1,12 @@
 # Руководство для разработчиков django-admin
 
-Этот документ описывает устройство Django-части проекта Theatre, рабочие команды и правила изменения кода.
+Этот документ описывает устройство Django-части проекта Theatre,
+рабочие команды и правила изменения кода.
 
 ## 1. Назначение проекта
 
-`django-admin` отвечает за административную часть проекта и HTTP API поверх модели `movies`.
+`django-admin` отвечает за административную часть проекта и HTTP API
+поверх модели `movies`.
 
 Основные задачи:
 
@@ -15,7 +17,8 @@
 
 ## 2. Архитектура проекта
 
-Проект использует стандартный Django entrypoint и разбиение настроек на отдельные модули.
+Проект использует стандартный Django entrypoint и разбиение
+настроек на отдельные модули.
 
 Ключевые точки:
 
@@ -29,7 +32,8 @@
 
 Настройки проекта собираются из нескольких файлов:
 
-- `components/secret_env.py` — переменные окружения для имени проекта, описания, `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`;
+- `components/secret_env.py` — переменные окружения для имени проекта,
+  описания, `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`;
 - `components/base.py` — базовые настройки языка, времени, `BASE_DIR` и `LOCALE_PATHS`;
 - `components/logging.py` — логирование SQL-запросов при `SQL_DEBUG`;
 - `components/installed_apps.py` — список `INSTALLED_APPS`;
@@ -83,7 +87,8 @@
 - `GET /api/v1/movies/`;
 - `GET /api/v1/movies/<uuid:pk>/`.
 
-Контроллеры реализованы через class-based views и используют агрегации PostgreSQL (`ArrayAgg`) для сборки списков жанров и персон.
+Контроллеры реализованы через class-based views и используют агрегации
+PostgreSQL (`ArrayAgg`) для сборки списков жанров и персон.
 
 ## 7. Локальная разработка
 
@@ -122,7 +127,8 @@ python manage.py runserver 0.0.0.0:8000
 
 В корне проекта используется `docker compose`.
 
-Сервис Django собирается из каталога `django-admin`, а стартовый скрипт контейнера выполняет:
+Сервис Django собирается из каталога `django-admin`, а стартовый
+скрипт контейнера выполняет:
 
 - `python manage.py migrate --noinput`;
 - `python manage.py compilemessages`;
@@ -157,7 +163,8 @@ docker compose up --build
 
 ## 10. Переводы
 
-Переводы лежат в `movies/locale/en/LC_MESSAGES/django.po` и `movies/locale/ru/LC_MESSAGES/django.po`.
+Переводы лежат в `movies/locale/en/LC_MESSAGES/django.po` и
+`movies/locale/ru/LC_MESSAGES/django.po`.
 
 Если вы меняете пользовательские строки в моделях, admin или API, проверьте, что:
 
@@ -202,4 +209,5 @@ docker compose up --build
 - Админка и API используют один и тот же Django-процесс.
 - Контейнер ожидает доступность PostgreSQL до старта приложения.
 - При старте контейнера перевод и статика собираются автоматически.
-- Для production-окружения следует проверять `ALLOWED_HOSTS`, `SECRET_KEY` и настройки базы данных отдельно.
+- Для production-окружения следует проверять `ALLOWED_HOSTS`,
+  `SECRET_KEY` и настройки базы данных отдельно.

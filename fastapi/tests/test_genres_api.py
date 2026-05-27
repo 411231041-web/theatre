@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from src.api.v1 import genres as genres_api
-from src.models.genre_api import GenreDetail, GenreShort
+from api.v1 import genres as genres_api
+from models.genre_api import GenreDetail, GenreShort
 
 
 class StubGenreService:
@@ -24,10 +24,13 @@ def test_genres_list_returns_data_and_forwards_filters(client):
     Проверяет, что API корректно передает параметры фильтрации в сервис.
     """
     service = StubGenreService()
-    service.list_genres.return_value = [
-        GenreShort(uuid=uuid4(), name="Comedy"),
-        GenreShort(uuid=uuid4(), name="Drama"),
-    ]
+    service.list_genres.return_value = {
+        "genres": [
+            GenreShort(uuid=uuid4(), name="Comedy"),
+            GenreShort(uuid=uuid4(), name="Drama"),
+        ],
+        "total_hits": 20,
+    }
 
     app = client.app
     app.dependency_overrides[genres_api.get_service] = lambda: service
@@ -50,7 +53,8 @@ def test_genres_list_rejects_invalid_sort(client):
     """
     Тест валидации параметра сортировки.
 
-    Проверяет, что API возвращает ошибку 422 при передаче недопустимого поля сортировки.
+    Проверяет, что API возвращает ошибку 422 при передаче
+    недопустимого поля сортировки.
     """
     response = client.get("/api/v1/genres/?sort=imdb_rating")
 
@@ -98,3 +102,25 @@ def test_genre_details_returns_genre(client):
     body = response.json()
     assert body["uuid"] == str(genre_id)
     assert body["name"] == "Action"
+
+
+def test_genres_list_rejects_page_number_above_total_pages(client):
+    """
+    Тест ограничения page_number для списка жанров.
+
+    Проверяет, что API возвращает 422, если номер страницы
+    больше, чем доступно страниц.
+    """
+    service = StubGenreService()
+    service.list_genres.return_value = {
+        "genres": [],
+        "total_hits": 0,
+    }
+
+    app = client.app
+    app.dependency_overrides[genres_api.get_service] = lambda: service
+
+    response = client.get("/api/v1/genres?page_size=50&page_number=2")
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]

@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from src.api.v1 import films as films_api
-from src.models.film_api import FilmDetail, FilmShort
+from api.v1 import films as films_api
+from models.film_api import FilmDetail, FilmShort
 
 
 class StubFilmService:
@@ -14,6 +14,7 @@ class StubFilmService:
 
     def __init__(self):
         self.list_films = AsyncMock()
+        self.search_films = AsyncMock()
         self.get_by_id = AsyncMock()
 
 
@@ -24,10 +25,13 @@ def test_films_list_returns_data_and_forwards_filters(client):
     Проверяет, что API корректно передает параметры фильтрации в сервис.
     """
     service = StubFilmService()
-    service.list_films.return_value = [
-        FilmShort(uuid=uuid4(), title="Film 1", imdb_rating=8.0),
-        FilmShort(uuid=uuid4(), title="Film 2", imdb_rating=7.4),
-    ]
+    service.list_films.return_value = {
+        "films": [
+            FilmShort(uuid=uuid4(), title="Film 1", imdb_rating=8.0),
+            FilmShort(uuid=uuid4(), title="Film 2", imdb_rating=7.4),
+        ],
+        "total_hits": 10,
+    }
 
     app = client.app
     app.dependency_overrides[films_api.get_service] = lambda: service
@@ -46,6 +50,7 @@ def test_films_list_returns_data_and_forwards_filters(client):
         page_number=2,
         sort="imdb_rating",
         genre="comedy",
+        title=None,
     )
 
 
@@ -53,9 +58,21 @@ def test_films_list_rejects_invalid_sort(client):
     """
     Тест валидации параметра сортировки.
 
-    Проверяет, что API возвращает ошибку 422 при передаче недопустимого поля сортировки.
+    Проверяет, что API возвращает ошибку 422 при передаче
+    недопустимого поля сортировки.
     """
     response = client.get("/api/v1/films/?sort=title")
+
+    assert response.status_code == 422
+
+
+def test_film_search_rejects_empty_query(client):
+    """
+    Тест валидации поискового запроса.
+
+    Проверяет, что API возвращает ошибку 422 при передаче пустого запроса.
+    """
+    response = client.get("/api/v1/films/search?query=")
 
     assert response.status_code == 422
 
@@ -106,3 +123,59 @@ def test_film_details_returns_film(client):
     body = response.json()
     assert body["uuid"] == str(film_id)
     assert body["title"] == "Test film"
+
+
+def test_film_search_returns_data_and_forwards_filters(client):
+    """
+    Тест поискового эндпоинта фильмов.
+
+    Проверяет, что API корректно передает параметры в сервис
+    и возвращает список фильмов.
+    """
+    service = StubFilmService()
+    service.search_films.return_value = {
+        "films": [
+            FilmShort(uuid=uuid4(), title="Search Film", imdb_rating=9.1),
+        ],
+        "total_hits": 1,
+    }
+
+    app = client.app
+    app.dependency_overrides[films_api.get_service] = lambda: service
+
+    response = client.get(
+        "/api/v1/films/search"
+        "?query=test&page_size=1&page_number=1"
+        "&sort=-imdb_rating"
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    service.search_films.assert_awaited_once_with(
+        query="test",
+        page_size=1,
+        page_number=1,
+        sort="-imdb_rating",
+    )
+
+
+def test_films_list_rejects_page_number_above_total_pages(client):
+    """
+    Тест ограничения page_number для списка фильмов.
+
+    Проверяет, что API возвращает 422, если запрошен номер страницы
+    больше, чем всего доступных страниц.
+    """
+    service = StubFilmService()
+    service.list_films.return_value = {
+        "films": [],
+        "total_hits": 1,
+    }
+
+    app = client.app
+    app.dependency_overrides[films_api.get_service] = lambda: service
+
+    response = client.get("/api/v1/films?page_size=50&page_number=2")
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]
