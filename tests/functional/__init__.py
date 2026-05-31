@@ -1,10 +1,14 @@
-# Package initializer for functional tests
+"""Пакет функциональных тестов и экспорт утилит для них.
 
-from utils.test_data import _generate_random_text
-from utils.test_data import _prepare_bulk_actions
-from utils.test_data import build_film_bulk_data
-from utils.test_data import build_genre_bulk_data
-from utils.test_data import build_person_bulk_data
+Экспортирует фабрики данных и вспомогательные функции, используемые в
+функциональных тестах проекта.
+"""
+
+from .utils.test_data_helpers import _generate_random_text
+from .utils.test_data_helpers import _prepare_bulk_actions
+from .utils.test_data_helpers import build_film_bulk_data
+from .utils.test_data_helpers import build_genre_bulk_data
+from .utils.test_data_helpers import build_person_bulk_data
 
 __all__ = [
     "_generate_random_text",

@@ -1,10 +1,14 @@
-# Package initializer for functional test utilities
+"""Пакет-инициализатор для вспомогательных утилит функциональных тестов.
 
-from utils.test_data import _generate_random_text
-from utils.test_data import _prepare_bulk_actions
-from utils.test_data import build_film_bulk_data
-from utils.test_data import build_genre_bulk_data
-from utils.test_data import build_person_bulk_data
+Экспортирует фабрики данных и вспомогательные функции для генерации
+bulk-документов Elasticsearch.
+"""
+
+from .test_data_helpers import _generate_random_text
+from .test_data_helpers import _prepare_bulk_actions
+from .test_data_helpers import build_film_bulk_data
+from .test_data_helpers import build_genre_bulk_data
+from .test_data_helpers import build_person_bulk_data
 
 __all__ = [
     "_generate_random_text",

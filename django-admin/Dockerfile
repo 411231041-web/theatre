@@ -1,19 +1,6 @@
-FROM python:3.10
+FROM python:3.13-slim
 
 WORKDIR /opt/app
-
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-ARG http_proxy
-ARG https_proxy
-ARG no_proxy
-ENV HTTP_PROXY=${HTTP_PROXY}
-ENV HTTPS_PROXY=${HTTPS_PROXY}
-ENV NO_PROXY=${NO_PROXY}
-ENV http_proxy=${http_proxy}
-ENV https_proxy=${https_proxy}
-ENV no_proxy=${no_proxy}
 
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
@@ -32,6 +19,9 @@ RUN  mkdir -p /var/www/static/ \
      && mkdir -p /opt/app/media/ \
      && apt-get update \
      && apt-get install -y --no-install-recommends gettext \
+        build-essential \
+        python3-dev \
+        libpq-dev \
      && rm -rf /var/lib/apt/lists/* \
      && pip install --upgrade pip \
      && pip install -r requirements.txt

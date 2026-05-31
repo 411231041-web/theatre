@@ -1,24 +1,25 @@
 services:
-  test-runner:
+  test-runner-dev:
     build:
+      context: ../../tests/functional
       dockerfile: Dockerfile.test.dev
     env_file:
       - ../../.env
     environment:
-      - SERVICE_URL=http://fastapi:8000
+      - SERVICE_URL=http://fastapi-dev:8000
       - ES_ID_FIELD=id
       - ES_INDEX_MAPPING=/app/testdata/es_mapping.py
-      - PYTHONPATH=/app/functional
+      - PYTHONPATH=/app
     depends_on:
       elasticsearch:
         condition: service_healthy
       redis:
         condition: service_healthy
-      fastapi:
+      fastapi-dev:
         condition: service_healthy
-    command: pytest -v /app/functional
+    command: pytest -v /app
     volumes:
-      - ./:/app/functional
+      - ../../tests/functional:/app
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.6.2
@@ -48,7 +49,7 @@ services:
     volumes:
       - redis-test-data:/data
 
-  fastapi:
+  fastapi-dev:
     build:
       context: ../../fastapi
       dockerfile: Dockerfile.dev

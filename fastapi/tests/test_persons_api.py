@@ -1,13 +1,18 @@
+"""Тесты API для персон (FastAPI).
+
+Проверяет поиск персон, получение детальной информации и выдачу фильмов
+по персоне, включая проверки валидации и кеширования.
+"""
+
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from api.v1 import persons as persons_api
-from models.person_api import PersonDetail, PersonSearchResult
+from core import dependencies
+from models.person_api import FilmInPerson, PersonDetail, PersonSearchResult
 
 
 class StubPersonService:
-    """
-    Заглушка для PersonService в тестах.
+    """Заглушка для PersonService в тестах.
 
     Позволяет мокать методы сервиса для тестирования API.
     """
@@ -23,6 +28,15 @@ def test_persons_search_returns_data_and_forwards_filters(client):
     Тест поиска персон с фильтрацией.
 
     Проверяет, что API корректно передает параметры фильтрации в сервис.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     service.search_persons.return_value = {
@@ -33,7 +47,9 @@ def test_persons_search_returns_data_and_forwards_filters(client):
     }
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
         "/api/v1/persons/search"
@@ -42,7 +58,12 @@ def test_persons_search_returns_data_and_forwards_filters(client):
     )
 
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    body = response.json()
+    assert body["count"] == 10
+    assert body["total_pages"] == 2
+    assert body["prev"] == 1
+    assert body["next"] is None
+    assert len(body["results"]) == 1
     service.search_persons.assert_awaited_once_with(
         query="geo",
         sort="full_name",
@@ -52,12 +73,21 @@ def test_persons_search_returns_data_and_forwards_filters(client):
     )
 
 
-def test_persons_search_rejects_page_number_above_total_pages(client):
+def test_persons_search_returns_empty_results_for_page_beyond_total(client):
     """
-    Тест ограничения page_number для поиска персон.
+    Тест обработки страницы за пределами диапазона.
 
-    Проверяет, что API возвращает 422, если запрошена страница
-    больше, чем доступно.
+    Проверяет, что API возвращает 200 и пустой список результатов,
+    если запрошенная страница больше числа доступных страниц.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     service.search_persons.return_value = {
@@ -66,15 +96,22 @@ def test_persons_search_rejects_page_number_above_total_pages(client):
     }
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
         "/api/v1/persons/search"
         "?query=geo&page_size=50&page_number=2"
     )
 
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 0
+    assert body["total_pages"] == 1
+    assert body["prev"] == 1
+    assert body["next"] is None
+    assert body["results"] == []
 
 
 def test_persons_search_rejects_empty_query(client):
@@ -82,6 +119,15 @@ def test_persons_search_rejects_empty_query(client):
     Тест валидации поискового запроса.
 
     Проверяет, что API возвращает ошибку 422 при передаче пустого запроса.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     response = client.get("/api/v1/persons/search?query=")
 
@@ -93,12 +139,23 @@ def test_person_details_returns_404_when_not_found(client):
     Тест обработки случая, когда персона не найдена.
 
     Проверяет, что API возвращает 404 при отсутствии персоны.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     service.get_by_id.return_value = None
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/persons/{uuid4()}")
 
@@ -111,17 +168,28 @@ def test_person_details_returns_person(client):
     Тест получения детальной информации о персоне.
 
     Проверяет, что API корректно возвращает данные персоны.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     person_id = uuid4()
     service.get_by_id.return_value = PersonDetail(
         uuid=person_id,
         full_name="George Name",
-        films=[{"uuid": uuid4(), "roles": ["actor"]}],
+        films=[FilmInPerson(uuid=uuid4(), roles=["actor"])],
     )
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/persons/{person_id}")
 
@@ -136,12 +204,23 @@ def test_person_films_returns_404_when_no_films(client):
     Тест обработки случая, когда у персоны нет фильмов.
 
     Проверяет, что API возвращает 404 при отсутствии фильмов у персоны.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     service.get_films_by_person.return_value = []
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/persons/{uuid4()}/film")
 
@@ -154,15 +233,26 @@ def test_person_films_returns_data(client):
     Тест получения фильмов персоны.
 
     Проверяет, что API корректно возвращает список фильмов персоны.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubPersonService()
     person_id = uuid4()
     service.get_films_by_person.return_value = [
-        {"id": str(uuid4()), "roles": ["writer"]},
+        FilmInPerson(uuid=uuid4(), roles=["writer"]),
     ]
 
     app = client.app
-    app.dependency_overrides[persons_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_persons_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
         f"/api/v1/persons/{person_id}/film?page_size=3&page_number=4"

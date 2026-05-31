@@ -1,89 +1,56 @@
 from uuid import UUID
 
-from elasticsearch import AsyncElasticsearch, NotFoundError
+from elasticsearch import AsyncElasticsearch
 from redis.asyncio import Redis
 
-from core.config import Settings, get_settings
+from core.config import get_settings
 from models.genre_api import GenreDetail, GenreShort
-from services.cache import (
-    build_cache_key,
-    get_cached_json,
-    get_cached_model,
-    set_cached_model,
-    set_cached_json,
-)
+from services.base import BaseService
+from services.cache import RedisCacheBackend
+from services.mappers import GenreMapper
+from services.repositories import ElasticsearchRepository
 
 
-class GenreService:
-    """
-    Сервис для работы с жанрами.
+class GenreService(BaseService[GenreDetail, GenreShort]):
+    """Сервис для работы с жанрами."""
 
-    Обеспечивает взаимодействие с Elasticsearch для получения данных о жанрах
-    и Redis для кэширования результатов.
+    @staticmethod
+    def _map_to_short(source: dict) -> GenreShort:
+        """Преобразовать ES-данные в GenreShort."""
+        return GenreMapper.to_short(source)
 
-    Attributes:
-        elastic: Клиент для взаимодействия с Elasticsearch.
-        redis: Клиент для взаимодействия с Redis.
-        settings: Конфигурация приложения.
-    """
-
-    def __init__(
-        self,
-        elastic: AsyncElasticsearch,
-        redis: Redis,
-        settings: Settings,
-    ) -> None:
-        """
-        Инициализация сервиса жанров.
-
-        Args:
-            elastic: Клиент Elasticsearch.
-            redis: Клиент Redis.
-            settings: Конфигурация приложения.
-        """
-        self.elastic = elastic
-        self.redis = redis
-        self.settings = settings
+    @staticmethod
+    def _map_to_detail(source: dict) -> GenreDetail:
+        """Преобразовать ES-данные в GenreDetail."""
+        return GenreMapper.to_detail(source)
 
     async def get_by_id(self, genre_id: UUID) -> GenreDetail | None:
         """
         Получить жанр по идентификатору с кэшированием.
 
-        Сначала проверяет кэш в Redis, при отсутствии данных обращается
-        к Elasticsearch и сохраняет результат в кэш.
-
         Args:
             genre_id: Уникальный идентификатор жанра (UUID).
 
         Returns:
-            GenreDetail | None: Детальная информация о жанре или None,
-                если не найден.
+            GenreDetail | None: Детальная информация о жанре или None.
         """
-        cache_key = build_cache_key("genres:get_by_id", genre_id=str(genre_id))
-        cached_genre = await get_cached_model(
-            self.redis,
+        cache_key = self._build_cache_key(
+            "genres:get_by_id",
+            genre_id=str(genre_id),
+        )
+        cached_genre = await self._get_from_cache_model(
             cache_key,
             GenreDetail,
         )
         if cached_genre is not None:
             return cached_genre
 
-        try:
-            response = await self.elastic.get(
-                index=self.settings.elasticsearch_genres_index,
-                id=str(genre_id),
-            )
-        except NotFoundError:
+        source = await self.repository.get_by_id(genre_id)
+        if source is None:
             return None
 
-        source = response.get("_source") or {}
-        genre = self._map_genre_detail(source)
-        await set_cached_model(
-            self.redis,
-            cache_key,
-            genre,
-            self.settings.redis_cache_expire,
-        )
+        genre = self._map_to_detail(source)
+        await self._set_cache_model(cache_key, genre)
         return genre
 
     async def list_genres(
@@ -98,25 +65,22 @@ class GenreService:
         Получить список жанров с пагинацией и фильтрацией по названию.
 
         Args:
-            sort: Поле для сортировки (например, "-name" для
-                убывающего порядка).
-            name: Название жанра для поиска (поиск по частичному совпадению).
-            page_size: Количество записей на страницу (по умолчанию 50).
-            page_number: Номер страницы (по умолчанию 1).
+            sort: Поле для сортировки (например, "-name").
+            name: Название жанра для поиска.
+            page_size: Количество записей на страницу.
+            page_number: Номер страницы.
 
         Returns:
-            dict[str, list[GenreShort] | int]:
-                Словарь с списком кратких данных о жанрах и
-                общим количеством записей.
+            dict[str, list[GenreShort] | int]: Список жанров и total_hits.
         """
-        cache_key = build_cache_key(
+        cache_key = self._build_cache_key(
             "genres:list",
             sort=sort,
             name=name,
             page_size=page_size,
             page_number=page_number,
         )
-        cached_payload = await get_cached_json(self.redis, cache_key)
+        cached_payload = await self._get_from_cache_json(cache_key)
         if isinstance(cached_payload, dict):
             cached_genres = cached_payload.get("genres")
             cached_total_hits = cached_payload.get("total_hits")
@@ -124,84 +88,37 @@ class GenreService:
                 isinstance(cached_genres, list)
                 and isinstance(cached_total_hits, int)
             ):
-                genres = [GenreShort(**genre) for genre in cached_genres]
+                genres = [
+                    GenreShort.model_validate(item)
+                    for item in cached_genres
+                ]
                 return {"genres": genres, "total_hits": cached_total_hits}
 
         sort_order = "desc" if sort.startswith("-") else "asc"
-        query: dict = {"match_all": {}}
-        if name:
-            query = {
-                "match": {
-                    "name": {
-                        "query": name,
-                    }
-                }
-            }
+        sort_field = sort.lstrip("-")
 
-        response = await self.elastic.search(
-            index=self.settings.elasticsearch_genres_index,
-            body={
-                "query": query,
-                "sort": [{"name.raw": {"order": sort_order}}],
-                "from": (page_number - 1) * page_size,
-                "size": page_size,
-                "_source": ["id", "name"],
-                "track_total_hits": True,
-            },
+        query_body = {"match_all": {}}
+        if name:
+            query_body = {"match": {"name": {"query": name}}}
+
+        offset = (page_number - 1) * page_size
+        sources, total = await self.repository.search(
+            query_body=query_body,
+            sort_field=f"{sort_field}.raw",
+            sort_order=sort_order,
+            offset=offset,
+            limit=page_size,
         )
 
-        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
-
-        hits = response.get("hits", {}).get("hits", [])
-        genres = [
-            self._map_genre_short(hit.get("_source") or {}) for hit in hits
-        ]
-        # Сохраняем в кеш структуру с данными и общим числом результатов,
-        # чтобы при последующих запросах можно было получить списки и
-        # общее количество без обращения в Elasticsearch.
-        await set_cached_json(
-            self.redis,
+        genres = [self._map_to_short(source) for source in sources]
+        await self._set_cache_json(
             cache_key,
             {
                 "genres": [g.model_dump(mode="json") for g in genres],
-                "total_hits": total_hits,
+                "total_hits": total,
             },
-            self.settings.redis_cache_expire,
         )
-        return {"genres": genres, "total_hits": total_hits}
-
-    @staticmethod
-    def _map_genre_short(source: dict) -> GenreShort:
-        """
-        Преобразовать исходные данные Elasticsearch в объект GenreShort.
-
-        Args:
-            source: Словарь с данными из Elasticsearch.
-
-        Returns:
-            GenreShort: Объект краткой информации о жанре.
-        """
-        return GenreShort(
-            uuid=source["id"],
-            name=source.get("name", ""),
-        )
-
-    @staticmethod
-    def _map_genre_detail(source: dict) -> GenreDetail:
-        """
-        Преобразовать исходные данные Elasticsearch в объект GenreDetail.
-
-        Args:
-            source: Словарь с данными из Elasticsearch.
-
-        Returns:
-            GenreDetail: Объект детальной информации о жанре.
-        """
-        return GenreDetail(
-            uuid=source["id"],
-            name=source.get("name", ""),
-            description=source.get("description"),
-        )
+        return {"genres": genres, "total_hits": total}
 
 
 def get_genre_service(
@@ -212,14 +129,21 @@ def get_genre_service(
     Создать и вернуть экземпляр GenreService с зависимостями.
 
     Args:
-        elastic: Клиент Elasticsearch.
-        redis: Клиент Redis.
+        elastic: Клиент Elasticsearch для доступа к жанрам.
+        redis: Клиент Redis для кэширования результатов.
 
     Returns:
-        GenreService: Экземпляр сервиса для работы с жанрами.
+        GenreService: Инициализированный сервис с репозиторием и кэшем.
     """
-    return GenreService(
+    settings = get_settings()
+    repository = ElasticsearchRepository(
         elastic=elastic,
-        redis=redis,
-        settings=get_settings(),
+        index_name=settings.elasticsearch_genres_index,
+        source_fields=["id", "name", "description"],
+    )
+    cache_backend = RedisCacheBackend(redis)
+    return GenreService(
+        repository=repository,
+        cache=cache_backend,
+        settings=settings,
     )

@@ -1,13 +1,18 @@
+"""Тесты API для фильмов (FastAPI).
+
+Проверяет валидацию параметров, получение списка и детализацию фильмов,
+а также поведение кеширования и обработки пагинации.
+"""
+
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from api.v1 import films as films_api
+from core import dependencies
 from models.film_api import FilmDetail, FilmShort
 
 
 class StubFilmService:
-    """
-    Заглушка для FilmService в тестах.
+    """Заглушка для FilmService в тестах.
 
     Позволяет мокать методы сервиса для тестирования API.
     """
@@ -23,6 +28,15 @@ def test_films_list_returns_data_and_forwards_filters(client):
     Тест получения списка фильмов с фильтрацией.
 
     Проверяет, что API корректно передает параметры фильтрации в сервис.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubFilmService()
     service.list_films.return_value = {
@@ -34,7 +48,9 @@ def test_films_list_returns_data_and_forwards_filters(client):
     }
 
     app = client.app
-    app.dependency_overrides[films_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_films_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
         "/api/v1/films/"
@@ -44,7 +60,12 @@ def test_films_list_returns_data_and_forwards_filters(client):
     )
 
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    body = response.json()
+    assert body["count"] == 10
+    assert body["total_pages"] == 2
+    assert body["prev"] == 1
+    assert body["next"] is None
+    assert len(body["results"]) == 2
     service.list_films.assert_awaited_once_with(
         page_size=5,
         page_number=2,
@@ -60,6 +81,15 @@ def test_films_list_rejects_invalid_sort(client):
 
     Проверяет, что API возвращает ошибку 422 при передаче
     недопустимого поля сортировки.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     response = client.get("/api/v1/films/?sort=title")
 
@@ -71,6 +101,15 @@ def test_film_search_rejects_empty_query(client):
     Тест валидации поискового запроса.
 
     Проверяет, что API возвращает ошибку 422 при передаче пустого запроса.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     response = client.get("/api/v1/films/search?query=")
 
@@ -82,12 +121,23 @@ def test_film_details_returns_404_when_not_found(client):
     Тест обработки случая, когда фильм не найден.
 
     Проверяет, что API возвращает 404 при отсутствии фильма.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubFilmService()
     service.get_by_id.return_value = None
 
     app = client.app
-    app.dependency_overrides[films_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_films_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/films/{uuid4()}")
 
@@ -100,6 +150,15 @@ def test_film_details_returns_film(client):
     Тест получения детальной информации о фильме.
 
     Проверяет, что API корректно возвращает данные фильма.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubFilmService()
     film_id = uuid4()
@@ -115,7 +174,9 @@ def test_film_details_returns_film(client):
     )
 
     app = client.app
-    app.dependency_overrides[films_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_films_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/films/{film_id}")
 
@@ -131,6 +192,15 @@ def test_film_search_returns_data_and_forwards_filters(client):
 
     Проверяет, что API корректно передает параметры в сервис
     и возвращает список фильмов.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubFilmService()
     service.search_films.return_value = {
@@ -141,7 +211,9 @@ def test_film_search_returns_data_and_forwards_filters(client):
     }
 
     app = client.app
-    app.dependency_overrides[films_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_films_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
         "/api/v1/films/search"
@@ -150,7 +222,12 @@ def test_film_search_returns_data_and_forwards_filters(client):
     )
 
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    body = response.json()
+    assert body["count"] == 1
+    assert body["total_pages"] == 1
+    assert body["prev"] is None
+    assert body["next"] is None
+    assert len(body["results"]) == 1
     service.search_films.assert_awaited_once_with(
         query="test",
         page_size=1,
@@ -159,12 +236,21 @@ def test_film_search_returns_data_and_forwards_filters(client):
     )
 
 
-def test_films_list_rejects_page_number_above_total_pages(client):
+def test_films_list_returns_empty_results_for_page_beyond_total(client):
     """
-    Тест ограничения page_number для списка фильмов.
+    Тест обработки страницы за пределами диапазона.
 
-    Проверяет, что API возвращает 422, если запрошен номер страницы
-    больше, чем всего доступных страниц.
+    Проверяет, что API возвращает 200 и пустой список результатов,
+    если запрошенная страница больше числа доступных страниц.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubFilmService()
     service.list_films.return_value = {
@@ -173,9 +259,16 @@ def test_films_list_rejects_page_number_above_total_pages(client):
     }
 
     app = client.app
-    app.dependency_overrides[films_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_films_dependency] = (
+        lambda: service
+    )
 
     response = client.get("/api/v1/films?page_size=50&page_number=2")
 
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["total_pages"] == 1
+    assert body["prev"] == 1
+    assert body["next"] is None
+    assert body["results"] == []

@@ -1,92 +1,60 @@
 from uuid import UUID
 
-from elasticsearch import AsyncElasticsearch, NotFoundError
+from elasticsearch import AsyncElasticsearch
 from redis.asyncio import Redis
 
-from core.config import Settings, get_settings
-from models.person_api import PersonDetail, PersonSearchResult
-from services.cache import (
-    build_cache_key,
-    get_cached_json,
-    get_cached_model,
-    set_cached_json,
-    set_cached_model,
+from core.config import get_settings
+from models.person_api import (
+    FilmInPerson,
+    PersonDetail,
+    PersonSearchResult,
 )
+from services.base import BaseService
+from services.cache import RedisCacheBackend
+from services.mappers import PersonMapper
+from services.repositories import ElasticsearchRepository
 
 
-class PersonService:
-    """
-    Сервис для работы с персонами.
+class PersonService(BaseService[PersonDetail, PersonSearchResult]):
+    """Сервис для работы с персонами."""
 
-    Обеспечивает взаимодействие с Elasticsearch для получения данных о персонах
-    и Redis для кэширования результатов.
+    @staticmethod
+    def _map_to_short(source: dict) -> PersonSearchResult:
+        """Преобразовать ES-данные в PersonSearchResult."""
+        return PersonMapper.to_short(source)
 
-    Attributes:
-        elastic: Клиент для взаимодействия с Elasticsearch.
-        redis: Клиент для взаимодействия с Redis.
-        settings: Конфигурация приложения.
-    """
-
-    def __init__(
-        self,
-        elastic: AsyncElasticsearch,
-        redis: Redis,
-        settings: Settings,
-    ) -> None:
-        """
-        Инициализация сервиса персон.
-
-        Args:
-            elastic: Клиент Elasticsearch.
-            redis: Клиент Redis.
-            settings: Конфигурация приложения.
-        """
-        self.elastic = elastic
-        self.redis = redis
-        self.settings = settings
+    @staticmethod
+    def _map_to_detail(source: dict) -> PersonDetail:
+        """Преобразовать ES-данные в PersonDetail."""
+        return PersonMapper.to_detail(source)
 
     async def get_by_id(self, person_id: UUID) -> PersonDetail | None:
         """
         Получить персону по идентификатору с кэшированием.
 
-        Сначала проверяет кэш в Redis, при отсутствии данных обращается
-        к Elasticsearch и сохраняет результат в кэш.
-
         Args:
             person_id: Уникальный идентификатор персоны (UUID).
 
         Returns:
-            PersonDetail | None: Детальная информация о персоне или None,
-                если не найдена.
+            PersonDetail | None: Детальная информация о персоне или None.
         """
-        cache_key = build_cache_key(
+        cache_key = self._build_cache_key(
             "persons:get_by_id",
             person_id=str(person_id),
         )
-        cached_person = await get_cached_model(
-            self.redis,
+        cached_person = await self._get_from_cache_model(
             cache_key,
             PersonDetail,
         )
         if cached_person is not None:
             return cached_person
 
-        try:
-            response = await self.elastic.get(
-                index=self.settings.elasticsearch_persons_index,
-                id=str(person_id),
-            )
-        except NotFoundError:
+        source = await self.repository.get_by_id(person_id)
+        if source is None:
             return None
 
-        source = response.get("_source") or {}
-        person = self._map_person_detail(source)
-        await set_cached_model(
-            self.redis,
-            cache_key,
-            person,
-            self.settings.redis_cache_expire,
-        )
+        person = self._map_to_detail(source)
+        await self._set_cache_model(cache_key, person)
         return person
 
     async def search_persons(
@@ -103,17 +71,16 @@ class PersonService:
 
         Args:
             query: Поисковый запрос.
-            sort: Поле для сортировки (например, "-full_name" для
-                убывающего порядка).
+            sort: Поле для сортировки (например, "-full_name").
             role: Роль для фильтрации (actor, director, writer).
-            page_size: Количество записей на страницу (по умолчанию 50).
-            page_number: Номер страницы (по умолчанию 1).
+            page_size: Количество записей на страницу.
+            page_number: Номер страницы.
 
         Returns:
-            list[PersonSearchResult]: Список найденных персон с краткой
-                информацией о фильмах.
+            dict[str, list[PersonSearchResult] | int]: Список персон и
+            total_hits.
         """
-        cache_key = build_cache_key(
+        cache_key = self._build_cache_key(
             "persons:search",
             query=query,
             sort=sort,
@@ -121,7 +88,7 @@ class PersonService:
             page_size=page_size,
             page_number=page_number,
         )
-        cached_payload = await get_cached_json(self.redis, cache_key)
+        cached_payload = await self._get_from_cache_json(cache_key)
         if isinstance(cached_payload, dict):
             cached_persons = cached_payload.get("persons")
             cached_total_hits = cached_payload.get("total_hits")
@@ -137,10 +104,85 @@ class PersonService:
 
         sort_order = "desc" if sort.startswith("-") else "asc"
         sort_field = sort.lstrip("-")
-        # Use keyword subfield for text fields to avoid fielddata errors
         if sort_field == "full_name":
             sort_field = f"{sort_field}.raw"
 
+        query_body = self._build_search_query(query=query, role=role)
+
+        offset = (page_number - 1) * page_size
+        sources, total = await self.repository.search(
+            query_body=query_body,
+            sort_field=sort_field,
+            sort_order=sort_order,
+            offset=offset,
+            limit=page_size,
+        )
+
+        persons = [
+            PersonMapper.to_search_result(source, role=role)
+            for source in sources
+        ]
+        await self._set_cache_json(
+            cache_key,
+            {
+                "persons": [
+                    person.model_dump(mode="json")
+                    for person in persons
+                ],
+                "total_hits": total,
+            },
+        )
+        return {"persons": persons, "total_hits": total}
+
+    async def get_films_by_person(
+        self,
+        person_id: UUID,
+        *,
+        page_size: int = 50,
+        page_number: int = 1,
+    ) -> list[FilmInPerson]:
+        """
+        Получить список фильмов по идентификатору персоны с пагинацией.
+
+        Args:
+            person_id: Уникальный идентификатор персоны (UUID).
+            page_size: Количество записей на страницу.
+            page_number: Номер страницы.
+
+        Returns:
+            list[FilmInPerson]: Список фильмов с информацией о ролях.
+        """
+        cache_key = self._build_cache_key(
+            "persons:films",
+            person_id=str(person_id),
+            page_size=page_size,
+            page_number=page_number,
+        )
+        cached_films = await self._get_from_cache_json(cache_key)
+        if isinstance(cached_films, list):
+            return [FilmInPerson.model_validate(item) for item in cached_films]
+
+        source = await self.repository.get_by_id(person_id)
+        if source is None:
+            return []
+
+        films = PersonMapper.to_films(source)
+        start = (page_number - 1) * page_size
+        end = start + page_size
+        paged_films = films[start:end]
+
+        await self._set_cache_json(
+            cache_key,
+            [film.model_dump(mode="json") for film in paged_films],
+        )
+        return paged_films
+
+    @staticmethod
+    def _build_search_query(
+        query: str,
+        role: str | None = None,
+    ) -> dict:
+        """Построить ES-запрос для поиска персон."""
         search_query: dict = {
             "bool": {
                 "must": [
@@ -159,149 +201,11 @@ class PersonService:
                 {
                     "nested": {
                         "path": "films",
-                        "query": {
-                            "term": {"films.roles": role}
-                        },
+                        "query": {"term": {"films.roles": role}},
                     }
                 }
             ]
-
-        response = await self.elastic.search(
-            index=self.settings.elasticsearch_persons_index,
-            body={
-                "query": search_query,
-                "sort": [{sort_field: {"order": sort_order}}],
-                "from": (page_number - 1) * page_size,
-                "size": page_size,
-                "_source": ["id", "full_name", "films"],
-                "track_total_hits": True,
-            },
-        )
-
-        total_hits = response.get("hits", {}).get("total", {}).get("value", 0)
-
-        hits = response.get("hits", {}).get("hits", [])
-        persons = [
-            self._map_person_search_result(hit.get("_source") or {}, role)
-            for hit in hits
-        ]
-        await set_cached_json(
-            self.redis,
-            cache_key,
-            {
-                "persons": [
-                    person.model_dump(mode="json")
-                    for person in persons
-                ],
-                "total_hits": total_hits,
-            },
-            self.settings.redis_cache_expire,
-        )
-        return {"persons": persons, "total_hits": total_hits}
-
-    async def get_films_by_person(
-        self,
-        person_id: UUID,
-        *,
-        page_size: int = 50,
-        page_number: int = 1,
-    ) -> list[dict]:
-        """
-        Получить список фильмов по идентификатору персоны с пагинацией.
-
-        Args:
-            person_id: Уникальный идентификатор персоны (UUID).
-            page_size: Количество записей на страницу (по умолчанию 50).
-            page_number: Номер страницы (по умолчанию 1).
-
-        Returns:
-            list[dict]: Список фильмов с информацией об участии персоны.
-        """
-        cache_key = build_cache_key(
-            "persons:films",
-            person_id=str(person_id),
-            page_size=page_size,
-            page_number=page_number,
-        )
-        cached_films = await get_cached_json(self.redis, cache_key)
-        if isinstance(cached_films, list):
-            return cached_films
-
-        try:
-            response = await self.elastic.get(
-                index=self.settings.elasticsearch_persons_index,
-                id=str(person_id),
-            )
-        except NotFoundError:
-            return []
-
-        source = response.get("_source") or {}
-        films = source.get("films", [])
-
-        start = (page_number - 1) * page_size
-        end = start + page_size
-
-        paged_films = films[start:end]
-        await set_cached_json(
-            self.redis,
-            cache_key,
-            paged_films,
-            self.settings.redis_cache_expire,
-        )
-        return paged_films
-
-    @staticmethod
-    def _map_person_detail(source: dict) -> PersonDetail:
-        """
-        Преобразовать исходные данные Elasticsearch в объект PersonDetail.
-
-        Args:
-            source: Словарь с данными из Elasticsearch.
-
-        Returns:
-            PersonDetail: Объект детальной информации о персоне с фильмами.
-        """
-        films = [
-            {"uuid": film["id"], "roles": film.get("roles", [])}
-            for film in source.get("films", [])
-            if film.get("id")
-        ]
-        return PersonDetail(
-            uuid=source["id"],
-            full_name=source.get("full_name", ""),
-            films=films,
-        )
-
-    @staticmethod
-    def _map_person_search_result(
-        source: dict,
-        role: str | None = None,
-    ) -> PersonSearchResult:
-        """
-        Преобразовать исходные данные Elasticsearch в объект
-            PersonSearchResult.
-
-        Args:
-            source: Словарь с данными из Elasticsearch.
-
-        Returns:
-            PersonSearchResult: Объект результата поиска персоны с фильмами.
-        """
-        films: list[dict] = []
-        for film in source.get("films", []):
-            if not film.get("id"):
-                continue
-            film_roles = film.get("roles", [])
-            if role is None:
-                films.append({"uuid": film["id"], "roles": film_roles})
-            else:
-                if role in film_roles:
-                    films.append({"uuid": film["id"], "roles": [role]})
-        return PersonSearchResult(
-            uuid=source["id"],
-            full_name=source.get("full_name", ""),
-            films=films,
-        )
+        return search_query
 
 
 def get_person_service(
@@ -312,14 +216,21 @@ def get_person_service(
     Создать и вернуть экземпляр PersonService с зависимостями.
 
     Args:
-        elastic: Клиент Elasticsearch.
-        redis: Клиент Redis.
+        elastic: Клиент Elasticsearch для доступа к персонам.
+        redis: Клиент Redis для кэширования результатов.
 
     Returns:
-        PersonService: Экземпляр сервиса для работы с персонами.
+        PersonService: Инициализированный сервис с репозиторием и кэшем.
     """
-    return PersonService(
+    settings = get_settings()
+    repository = ElasticsearchRepository(
         elastic=elastic,
-        redis=redis,
-        settings=get_settings(),
+        index_name=settings.elasticsearch_persons_index,
+        source_fields=["id", "full_name", "films"],
+    )
+    cache_backend = RedisCacheBackend(redis)
+    return PersonService(
+        repository=repository,
+        cache=cache_backend,
+        settings=settings,
     )

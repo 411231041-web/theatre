@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     Порт Elasticsearch (по умолчанию: 9200).
     """
 
-    elasticsearch_index: str = Field(
+    elasticsearch_films_index: str = Field(
         default="movies",
         alias="ELASTICSEARCH_FILMS_INDEX",
     )

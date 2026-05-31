@@ -23,29 +23,26 @@
 - `settings.py` — конфигурация окружения через переменные окружения.
 - `src/test_*.py` — сами тесты для каждого API-роута.
 - `testdata/es_mapping.py` — маппинги индексов Elasticsearch для тестов.
-- `utils/test_data.py` — вспомогательные утилиты для генерации тестовых данных.
+- `utils/test_data_helpers.py` — вспомогательные утилиты для генерации тестовых данных.
 
 ### 2.2 Фикстуры
 
 Ключевые фикстуры:
 
-- `event_loop` — отдельный цикл событий для сессии pytest.
-- `es_client` — клиент AsyncElasticsearch для работы с Elasticsearch.
-- `es_write_data` — функция для записи данных в Elasticsearch.
+- `event_loop` — fixture pytest-asyncio, обеспечивающая цикл
+  событий для сессии.
+- `es_client_factory` — фабрика для создания клиента AsyncElasticsearch.
+- `es_write_data` — фикстура, возвращающая функцию для записи данных в Elasticsearch.
 - `es_film_data`, `es_genre_data`, `es_person_data` — фабрики тестовых данных.
 - `redis_client` — клиент Redis для проверки кеша.
 - `http_session` — aiohttp.ClientSession для HTTP-запросов.
 
 ### 2.3 Утилиты
 
-Утилиты вынесены в отдельный файл `utils/test_data.py`:
+Утилиты вынесены в отдельный файл `utils/test_data_helpers.py`:
 
 - `_generate_random_text(prefix, length)` — генерирует случайный текст с префиксом.
 - `_prepare_bulk_actions(documents, index)` — формирует bulk-документы для Elasticsearch.
-- `build_film_bulk_data(count, query_prefix)` — генерирует тестовые данные фильмов.
-- `build_genre_bulk_data(count, query_prefix)` — генерирует тестовые данные жанров.
-- `build_person_bulk_data(count, query_prefix)` — генерирует тестовые данные персон.
-- `fetch_all_pages(session, url, params, page_size)` — загружает все страницы пагинации.
 - `build_film_bulk_data(count, query_prefix)` — генерирует тестовые данные фильмов.
 - `build_genre_bulk_data(count, query_prefix)` — генерирует тестовые данные жанров.
 - `build_person_bulk_data(count, query_prefix)` — генерирует тестовые данные персон.
@@ -147,7 +144,7 @@ docker compose -f tests/functional/docker-compose.yml run --rm test-runner pytes
 Рекомендуемая последовательность:
 
 1. Определите, какой эндпоинт тестируете (`test_films.py`, `test_genres.py`, `test_persons.py`, `test_films_search.py`).
-2. Используйте существующие фикстуры (`es_client`, `http_session`, `redis_client`).
+2. Используйте существующие фикстуры (`es_client_factory`, `http_session`, `redis_client`).
 3. Подготовьте данные через `es_write_data` с нужным маппингом.
 4. Сделайте HTTP-запрос через `http_session`.
 5. Проверьте статус, тело ответа и побочные эффекты (кеш в Redis).
@@ -156,9 +153,76 @@ docker compose -f tests/functional/docker-compose.yml run --rm test-runner pytes
 
 Если нужно добавить новую утилиту для генерации тестовых данных:
 
-1. Добавьте функцию в `utils/test_data.py`.
+1. Добавьте функцию в `utils/test_data_helpers.py`.
 2. Экспортируйте её в `utils/__init__.py`.
 3. Импортируйте в `conftest.py`, если она нужна в фикстурах.
+
+## 6.2 Встроенные helper-ы для тестов
+
+В `utils/assert_helpers.py` собраны вспомогательные функции для упрощения
+написания тестов:
+
+### `get_json(response)`
+Упрощает получение статуса и JSON-тела из ответа API.
+
+**Было:**
+```python
+async with session.get(url) as response:
+    body = await response.json()
+    status = response.status
+```
+
+**Стало:**
+```python
+status, body = await get_json(
+    session.get(url)
+)
+```
+
+### `assert_items_have_fields(items, required_fields)`
+Проверяет, что все элементы в списке содержат требуемые поля.
+
+**Было:**
+```python
+for item in body:
+    assert "uuid" in item
+    assert "title" in item
+```
+
+**Стало:**
+```python
+assert_items_have_fields(body, ["uuid", "title"])
+```
+
+### `assert_validation_error(...)`
+Комплексная проверка структуры ошибки валидации. Разделена на небольшие функции:
+- `_assert_type_prefix` — проверка типа ошибки
+- `_assert_loc_contains` — проверка локации ошибки
+- `_assert_ctx_contains` — проверка контекста ошибки
+- `_assert_body_length` — проверка длины ответа
+- `_assert_body_item` — проверка структуры элементов
+- `_assert_uuid` — проверка UUID
+- `_assert_field` — проверка конкретного поля
+
+**Пример:**
+```python
+status, body = await get_json(
+    session.get(
+        test_settings.service_url + "/api/v1/films",
+        params={"page_size": -1}
+    )
+)
+
+assert_validation_error(
+    status,
+    422,
+    body['detail'][0],
+    type_prefix='greater_than_equal',
+    loc_contains='["query","page_size"]',
+    ctx_contains={"ge": 1},
+)
+```
+
 ### Пример теста
 
 ```python
@@ -185,7 +249,7 @@ async def test_example_endpoint(es_test_data, http_session):
 - Проверяйте статус ответа и тело ответа.
 - Проверяйте кеширование через `redis_client`.
 - Используйте `build_film_bulk_data`, `build_genre_bulk_data`, `build_person_bulk_data` для генерации тестовых данных.
-- Импортируйте утилиты из `utils/test_data.py` или `utils/__init__.py`.
+- Импортируйте утилиты из `utils/test_data_helpers.py` или `utils/__init__.py`.
 
 ## 8. Диагностика
 
@@ -199,7 +263,7 @@ async def test_example_endpoint(es_test_data, http_session):
 - Тесты используют `aiohttp.ClientSession` для HTTP-запросов.
 - Elasticsearch-клиент использует `AsyncElasticsearch`.
 - Redis-клиент использует `redis.asyncio.Redis`.
-- Тестовые данные генерируются с помощью `random` и `uuid` в модуле `utils/test_data.py`.
+- Тестовые данные генерируются с помощью `random` и `uuid` в модуле `utils/test_data_helpers.py`.
 - Каждый тест очищает Redis перед запуском (`redis_client` с `scope="function"`).
 
 ## 10. Запуск тестов
@@ -234,5 +298,7 @@ PYTHONPATH=. pytest -v src
 
 - `conftest.py` — фикстуры и утилиты;
 - `settings.py` — переменные окружения;
-- `testdata/es_mapping.py` — маппинги индексов;- `utils/test_data.py` — утилиты для генерации тестовых данных;- логи FastAPI-сервиса;
+- `testdata/es_mapping.py` — маппинги индексов
+- `utils/test_data_helpers.py` — утилиты для генерации тестовых данных
+- логи FastAPI-сервиса
 - логи Elasticsearch и Redis.

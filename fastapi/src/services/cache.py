@@ -1,5 +1,6 @@
 import hashlib
 import json
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Any, TypeVar
 
@@ -9,6 +10,73 @@ from redis.exceptions import RedisError
 
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
+
+
+class CacheBackend(ABC):
+    """Абстрактный интерфейс для кэширования."""
+
+    @abstractmethod
+    async def get_model(
+        self,
+        key: str,
+        model_cls: type[ModelType],
+    ) -> ModelType | None:
+        """Получить модель из кэша по ключу."""
+
+    @abstractmethod
+    async def set_model(
+        self,
+        key: str,
+        value: BaseModel,
+        expire: int,
+    ) -> None:
+        """Сохранить модель в кэше."""
+
+    @abstractmethod
+    async def get_json(self, key: str) -> Any | None:
+        """Получить JSON-данные из кэша."""
+
+    @abstractmethod
+    async def set_json(
+        self,
+        key: str,
+        value: Any,
+        expire: int,
+    ) -> None:
+        """Сохранить JSON-данные в кэше."""
+
+
+class RedisCacheBackend(CacheBackend):
+    """Реализация кэша на основе Redis."""
+
+    def __init__(self, redis: Redis) -> None:
+        self.redis = redis
+
+    async def get_model(
+        self,
+        key: str,
+        model_cls: type[ModelType],
+    ) -> ModelType | None:
+        return await get_cached_model(self.redis, key, model_cls)
+
+    async def set_model(
+        self,
+        key: str,
+        value: BaseModel,
+        expire: int,
+    ) -> None:
+        await set_cached_model(self.redis, key, value, expire)
+
+    async def get_json(self, key: str) -> Any | None:
+        return await get_cached_json(self.redis, key)
+
+    async def set_json(
+        self,
+        key: str,
+        value: Any,
+        expire: int,
+    ) -> None:
+        await set_cached_json(self.redis, key, value, expire)
 
 
 def build_cache_key(namespace: str, **params: Any) -> str:

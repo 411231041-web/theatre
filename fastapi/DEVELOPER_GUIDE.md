@@ -151,6 +151,7 @@ docker compose up -d --build
    - сохранять результат в Redis.
 3. Добавить роут в `src/api/v1/*`:
    - `response_model`;
+   - аннотировать `return` тем же типом, что указан в `response_model`;
    - валидацию query/path;
    - `Depends(get_service)`;
    - возвращать корректные `404`/`422`.
@@ -183,7 +184,7 @@ PYTHONPATH=src .venv/bin/python -m pytest -q tests
 - `422 Unprocessable Entity`:
   - `sort` обязателен и проверяется шаблоном;
   - `page_size` ограничен 1..100;
-  - `page_number` должен быть <= total pages.
+  - `page_number` должен быть >= 1.
 - `404` для сущностей:
   - проверьте UUID и наличие документа в Elasticsearch.
 - `empty search`:
@@ -195,7 +196,7 @@ PYTHONPATH=src .venv/bin/python -m pytest -q tests
 
 - `src/main.py` использует `ORJSONResponse` для быстрого JSON-сериализатора.
 - `Docs` доступны по `/api/v1/openapi`.
-- `PersonsService.get_films_by_person` возвращает список `dict` с фильмами и ролями,
-  а не Pydantic-модель.
+- `PersonsService.get_films_by_person` возвращает список `FilmInPerson` Pydantic-моделей
+  с фильмами и ролями, а не сырых `dict`.
 - `PersonService.search_persons` возвращает список `PersonSearchResult`,
   фильтруя роли по полю `films.roles`.

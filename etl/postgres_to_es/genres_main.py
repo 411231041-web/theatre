@@ -33,7 +33,7 @@ class GenresETLPipeline:
         )
         self.es_saver = ElasticsearchSaver(
             self.settings.elasticsearch_url,
-            self.settings.elasticsearch_index,
+            self.settings.elasticsearch_genres_index,
             self.retry_config,
         )
 

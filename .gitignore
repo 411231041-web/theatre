@@ -1,3 +1,4 @@
 .env
 notes
 __pycache__/
+.github

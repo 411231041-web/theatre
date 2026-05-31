@@ -1,29 +1,17 @@
-import math
 from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-
-from db.elasticsearch import get_elastic_client
-from db.redis import get_redis_client
+from api.v1.helpers import paginated_result
+from core.dependencies import get_genres_dependency
 from models.genre_api import GenreDetail, GenreShort
-from services.genres import GenreService, get_genre_service
+from models.pagination import PaginatedResponse
+from services.genres import GenreService
 
 router = APIRouter(prefix="/genres", tags=["genres"])
 
 
-def get_service() -> GenreService:
-    """
-    Создает и возвращает экземпляр GenreService с зависимостями.
-
-    Returns:
-        GenreService: Экземпляр сервиса для работы с жанрами.
-    """
-    return get_genre_service(get_elastic_client(), get_redis_client())
-
-
 @router.get(
     "",
-    response_model=list[GenreShort],
+    response_model=PaginatedResponse[GenreShort],
     summary="Список жанров",
     description="Возвращает список всех жанров с пагинацией.",
 )
@@ -33,8 +21,8 @@ async def genres_list(
     filter_name: str | None = Query(default=None, alias="filter[name]"),
     page_size: int = Query(default=50, ge=1, le=100),
     page_number: int = Query(default=1, ge=1),
-    service: GenreService = Depends(get_service),
-) -> list[GenreShort]:
+    service: GenreService = Depends(get_genres_dependency),
+) -> PaginatedResponse[GenreShort]:
     """
     Получить список жанров с пагинацией и фильтрацией.
 
@@ -62,25 +50,13 @@ async def genres_list(
 
     genres = result["genres"]
     total_hits = result["total_hits"]
-    total_pages = max(1, math.ceil(total_hits / page_size))
-    if page_number > total_pages:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=[
-                {
-                    "type": "less_than_equal",
-                    "loc": ["query", "page_number"],
-                    "msg": (
-                        f"Input should be less than or equal to "
-                        f"{total_pages}"
-                    ),
-                    "input": str(page_number),
-                    "ctx": {"le": total_pages},
-                }
-            ],
-        )
 
-    return genres
+    return paginated_result(
+        genres,
+        total_hits,
+        page_number,
+        page_size,
+    )
 
 
 @router.get(
@@ -91,7 +67,7 @@ async def genres_list(
 )
 async def genre_details(
     genre_id: UUID,
-    service: GenreService = Depends(get_service),
+    service: GenreService = Depends(get_genres_dependency),
 ) -> GenreDetail:
     """
     Получить детальную информацию о жанре по его идентификатору.

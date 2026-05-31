@@ -1,3 +1,9 @@
+"""Настройки тестовой среды, загружаемые через Pydantic.
+
+Содержит класс `TestSettings` с параметрами подключения к Elasticsearch,
+Redis и базовому URL тестового сервиса.
+"""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
 

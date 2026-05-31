@@ -1,8 +1,18 @@
-# Elasticsearch mapping test data
+"""Тестовые маппинги Elasticsearch для функциональных тестов.
+
+Файл содержит словари `ES_FILM_MAPPING`, `ES_GENRE_MAPPING` и
+`ES_PERSON_MAPPING`, используемые при создании индексов для тестов.
+"""
+# Маппинги Elasticsearch для тестов
 ES_FILM_MAPPING = {
     "properties": {
         "id": {"type": "keyword"},
-        "title": {"type": "text"},
+        "title": {
+            "type": "text",
+            "fields": {
+                "raw": {"type": "keyword"},
+            },
+        },
         "description": {"type": "text"},
         "imdb_rating": {"type": "float"},
         "genre": {"type": "keyword"},

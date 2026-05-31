@@ -32,12 +32,20 @@ def _prepare_bulk_actions(
     _source для массовой записи в Elasticsearch.
     """
     return [
-        {"_index": index, "_id": doc["id"], "_source": doc}
+        {
+            "_index": index,
+            "_id": doc["id"],
+            "_source": doc,
+        }
         for doc in documents
     ]
 
 
-def _create_film_doc(prefix: str, use_practicum: bool = False, index: int = None) -> dict:
+def _create_film_doc(
+    prefix: str,
+    use_practicum: bool = False,
+    index: int = None,
+) -> dict:
     """Создаёт один документ фильма с указанным префиксом."""
     if use_practicum:
         # index == 0: только "practicum"
@@ -46,13 +54,19 @@ def _create_film_doc(prefix: str, use_practicum: bool = False, index: int = None
     else:
         # Все остальные содержат префикс (обычно "Test movie")
         title = _generate_random_text(prefix)
-    
+
+    now = datetime.datetime.now().isoformat()
+    rating = round(5.0 + random.random() * 5.0, 1)
+    description = _generate_random_text("Description", 48)
+
+    genres = ["Drama", "Action", "Comedy", "Sci-Fi"]
+
     return {
         "id": str(uuid.uuid4()),
-        "imdb_rating": round(5.0 + random.random() * 5.0, 1),
-        "genre": [random.choice(["Drama", "Action", "Comedy", "Sci-Fi"])],
+        "imdb_rating": rating,
+        "genre": [random.choice(genres)],
         "title": title,
-        "description": _generate_random_text("Description", 48),
+        "description": description,
         "director": [_generate_random_text("Director", 10)],
         "actors_names": [
             _generate_random_text("Actor", 8),
@@ -82,13 +96,17 @@ def _create_film_doc(prefix: str, use_practicum: bool = False, index: int = None
                 "name": _generate_random_text("Writer", 8),
             },
         ],
-        "created_at": datetime.datetime.now().isoformat(),
-        "updated_at": datetime.datetime.now().isoformat(),
+        "created_at": now,
+        "updated_at": now,
         "film_work_type": "movie",
     }
 
 
-def _create_genre_doc(prefix: str, use_practicum: bool = False, index: int = None) -> dict:
+def _create_genre_doc(
+    prefix: str,
+    use_practicum: bool = False,
+    index: int = None,
+) -> dict:
     """Создаёт один документ жанра с указанным префиксом."""
     if use_practicum:
         # index == 0: только "practicum"
@@ -97,17 +115,24 @@ def _create_genre_doc(prefix: str, use_practicum: bool = False, index: int = Non
     else:
         # Все остальные содержат префикс (обычно "Test")
         name = _generate_random_text(prefix)
-    
+
+    now = datetime.datetime.now().isoformat()
+    description = _generate_random_text("Description", 48)
+
     return {
         "id": str(uuid.uuid4()),
         "name": name,
-        "description": _generate_random_text("Description", 48),
-        "created_at": datetime.datetime.now().isoformat(),
-        "updated_at": datetime.datetime.now().isoformat(),
+        "description": description,
+        "created_at": now,
+        "updated_at": now,
     }
 
 
-def _create_person_doc(prefix: str, use_practicum: bool = False, index: int = None) -> dict:
+def _create_person_doc(
+    prefix: str,
+    use_practicum: bool = False,
+    index: int = None,
+) -> dict:
     """Создаёт один документ персоны с указанным префиксом."""
     if use_practicum:
         # index == 0: только "practicum"
@@ -116,14 +141,16 @@ def _create_person_doc(prefix: str, use_practicum: bool = False, index: int = No
     else:
         # Все остальные содержат префикс (обычно "Test person")
         full_name = _generate_random_text(prefix)
-    
+
+    roles = ["actor", "director", "writer"]
+
     return {
         "id": str(uuid.uuid4()),
         "full_name": full_name,
         "films": [
             {
                 "id": str(uuid.uuid4()),
-                "roles": [random.choice(["actor", "director", "writer"])],
+                "roles": [random.choice(roles)],
             }
             for _ in range(3)
         ],
@@ -139,16 +166,21 @@ def build_film_bulk_data(count: int, query_prefix: str) -> list[dict]:
     """
     practicum_count = min(20, count)
     documents = []
-    
+
     # Первые 20 документов с "practicum"
     for i in range(practicum_count):
-        documents.append(_create_film_doc(query_prefix, use_practicum=True, index=i))
-    
+        documents.append(
+            _create_film_doc(query_prefix, use_practicum=True, index=i)
+        )
+
     # Остальные документы - содержат префикс но не "practicum"
     for _ in range(count - practicum_count):
         documents.append(_create_film_doc(query_prefix, use_practicum=False))
-    
-    return _prepare_bulk_actions(documents, index=test_settings.es_film_index)
+
+    return _prepare_bulk_actions(
+        documents,
+        index=test_settings.es_film_index,
+    )
 
 
 def build_genre_bulk_data(count: int, query_prefix: str) -> list[dict]:
@@ -160,17 +192,20 @@ def build_genre_bulk_data(count: int, query_prefix: str) -> list[dict]:
     """
     practicum_count = min(20, count)
     documents = []
-    
+
     # Первые 20 документов с "practicum"
     for i in range(practicum_count):
-        documents.append(_create_genre_doc(query_prefix, use_practicum=True, index=i))
-    
+        documents.append(
+            _create_genre_doc(query_prefix, use_practicum=True, index=i)
+        )
+
     # Остальные документы - содержат префикс но не "practicum"
     for _ in range(count - practicum_count):
         documents.append(_create_genre_doc(query_prefix, use_practicum=False))
-    
+
     return _prepare_bulk_actions(
-        documents, index=test_settings.es_genre_index
+        documents,
+        index=test_settings.es_genre_index,
     )
 
 
@@ -183,15 +218,18 @@ def build_person_bulk_data(count: int, query_prefix: str) -> list[dict]:
     """
     practicum_count = min(20, count)
     documents = []
-    
+
     # Первые 20 документов с "practicum"
     for i in range(practicum_count):
-        documents.append(_create_person_doc(query_prefix, use_practicum=True, index=i))
-    
+        documents.append(
+            _create_person_doc(query_prefix, use_practicum=True, index=i)
+        )
+
     # Остальные документы - содержат префикс но не "practicum"
     for _ in range(count - practicum_count):
         documents.append(_create_person_doc(query_prefix, use_practicum=False))
-    
+
     return _prepare_bulk_actions(
-        documents, index=test_settings.es_person_index
+        documents,
+        index=test_settings.es_person_index,
     )

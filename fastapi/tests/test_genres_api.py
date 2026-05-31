@@ -1,13 +1,18 @@
+"""Тесты API для жанров (FastAPI).
+
+Проверяет валидацию параметров, получение списка жанров, детализацию и
+поведение кеширования.
+"""
+
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from api.v1 import genres as genres_api
+from core import dependencies
 from models.genre_api import GenreDetail, GenreShort
 
 
 class StubGenreService:
-    """
-    Заглушка для GenreService в тестах.
+    """Заглушка для GenreService в тестах.
 
     Позволяет мокать методы сервиса для тестирования API.
     """
@@ -22,6 +27,15 @@ def test_genres_list_returns_data_and_forwards_filters(client):
     Тест получения списка жанров с фильтрацией.
 
     Проверяет, что API корректно передает параметры фильтрации в сервис.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubGenreService()
     service.list_genres.return_value = {
@@ -33,14 +47,22 @@ def test_genres_list_returns_data_and_forwards_filters(client):
     }
 
     app = client.app
-    app.dependency_overrides[genres_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_genres_dependency] = (
+        lambda: service
+    )
 
     response = client.get(
-        "/api/v1/genres/?filter[name]=com&page_size=5&page_number=3&sort=-name"
+        "/api/v1/genres/?filter[name]=com&page_size=5&page_number=3"
+        "&sort=-name"
     )
 
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    body = response.json()
+    assert body["count"] == 20
+    assert body["total_pages"] == 4
+    assert body["prev"] == 2
+    assert body["next"] == 4
+    assert len(body["results"]) == 2
     service.list_genres.assert_awaited_once_with(
         sort="-name",
         name="com",
@@ -55,6 +77,15 @@ def test_genres_list_rejects_invalid_sort(client):
 
     Проверяет, что API возвращает ошибку 422 при передаче
     недопустимого поля сортировки.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     response = client.get("/api/v1/genres/?sort=imdb_rating")
 
@@ -66,12 +97,23 @@ def test_genre_details_returns_404_when_not_found(client):
     Тест обработки случая, когда жанр не найден.
 
     Проверяет, что API возвращает 404 при отсутствии жанра.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubGenreService()
     service.get_by_id.return_value = None
 
     app = client.app
-    app.dependency_overrides[genres_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_genres_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/genres/{uuid4()}")
 
@@ -84,6 +126,15 @@ def test_genre_details_returns_genre(client):
     Тест получения детальной информации о жанре.
 
     Проверяет, что API корректно возвращает данные жанра.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubGenreService()
     genre_id = uuid4()
@@ -94,7 +145,9 @@ def test_genre_details_returns_genre(client):
     )
 
     app = client.app
-    app.dependency_overrides[genres_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_genres_dependency] = (
+        lambda: service
+    )
 
     response = client.get(f"/api/v1/genres/{genre_id}")
 
@@ -104,12 +157,21 @@ def test_genre_details_returns_genre(client):
     assert body["name"] == "Action"
 
 
-def test_genres_list_rejects_page_number_above_total_pages(client):
+def test_genres_list_returns_empty_results_for_page_beyond_total(client):
     """
-    Тест ограничения page_number для списка жанров.
+    Тест обработки страницы за пределами диапазона.
 
-    Проверяет, что API возвращает 422, если номер страницы
-    больше, чем доступно страниц.
+    Проверяет, что API возвращает 200 и пустой список результатов,
+    если запрошенная страница больше числа доступных страниц.
+
+    Параметры
+    ---------
+    client: TestClient
+        Фикстура тестового клиента FastAPI.
+
+    Возвращает
+    ---------
+    None
     """
     service = StubGenreService()
     service.list_genres.return_value = {
@@ -118,9 +180,16 @@ def test_genres_list_rejects_page_number_above_total_pages(client):
     }
 
     app = client.app
-    app.dependency_overrides[genres_api.get_service] = lambda: service
+    app.dependency_overrides[dependencies.get_genres_dependency] = (
+        lambda: service
+    )
 
     response = client.get("/api/v1/genres?page_size=50&page_number=2")
 
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["query", "page_number"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 0
+    assert body["total_pages"] == 1
+    assert body["prev"] == 1
+    assert body["next"] is None
+    assert body["results"] == []

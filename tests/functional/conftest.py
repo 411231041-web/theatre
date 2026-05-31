@@ -5,7 +5,6 @@
 """
 
 import asyncio
-
 import aiohttp
 import pytest_asyncio
 from elasticsearch import AsyncElasticsearch
@@ -15,85 +14,155 @@ from settings import test_settings
 from testdata.es_mapping import ES_FILM_MAPPING
 from testdata.es_mapping import ES_GENRE_MAPPING
 from testdata.es_mapping import ES_PERSON_MAPPING
-from utils.test_data import build_film_bulk_data
-from utils.test_data import build_genre_bulk_data
-from utils.test_data import build_person_bulk_data
+from utils.test_data_helpers import build_film_bulk_data
+from utils.test_data_helpers import build_genre_bulk_data
+from utils.test_data_helpers import build_person_bulk_data
+from utils.es_helpers import recreate_index
 
 
-async def _recreate_index(
-    es_client: AsyncElasticsearch, index: str, mapping: dict
-) -> None:
-    """Удаляет и создаёт индекс Elasticsearch с указанным маппингом.
+@pytest_asyncio.fixture(name="es_client_factory", scope="session")
+def es_client_factory():
+    """Фабрика для создания AsyncElasticsearch клиента.
 
-    Если индекс существует, сначала удаляет его, а затем создаёт заново
-    с переданным маппингом.
+    Возвращает функцию для создания клиента AsyncElasticsearch
+    внутри текущего event loop.
+
+    Возвращает
+    ---------
+    Callable[[], AsyncElasticsearch]
+        Функция для создания нового клиента AsyncElasticsearch,
+        подключённого к хосту из конфигурации.
     """
-    if await es_client.indices.exists(index=index):
-        await es_client.indices.delete(index=index)
-    await es_client.indices.create(index=index, mappings=mapping)
+    def make_client():
+        """Создать клиент AsyncElasticsearch с настройками проекта.
+
+        Возвращает
+        ---------
+        AsyncElasticsearch
+            Клиент Elasticsearch с проверкой сертификатов отключена.
+        """
+        return AsyncElasticsearch(
+            hosts=[test_settings.es_url], verify_certs=False
+        )
+
+    return make_client
 
 
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    """Создаёт отдельный цикл событий для сессии pytest.
+@pytest_asyncio.fixture(name="es_write_lock", scope="session")
+async def es_write_lock():
+    """Создаёт блокировку для синхронизации записей в Elasticsearch.
 
-    Фикстура создаёт новый цикл событий; его закрытие происходит после
-    завершения сессии тестов.
+    Фикстура обеспечивает последовательную запись данных из разных
+    тестов в одном event loop, предотвращая конфликты доступа.
+
+    Возвращает
+    ---------
+    asyncio.Lock
+        Блокировка, привязанная к текущему event loop.
     """
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(name="es_client", scope="session")
-async def es_client():
-    """Создаёт клиент AsyncElasticsearch на время сессии.
-
-    Клиент используется для всех запросов тестовой сессии и закрывается
-    после завершения тестов.
-    """
-    client = AsyncElasticsearch(
-        hosts=[test_settings.es_url], verify_certs=False
-    )
-    yield client
-    await client.close()
+    return asyncio.Lock()
 
 
 @pytest_asyncio.fixture(name="es_write_data", scope="session")
-def es_write_data(es_client):
+def es_write_data(es_client_factory, es_write_lock):
     """Возвращает функцию записи данных в Elasticsearch.
 
-    Каждый вызов пересоздаёт индекс и загружает переданный набор данных.
+    Фикстура возвращает async-функцию, принимающую bulk-данные, имя
+    индекса и опциональный маппинг. Все записи синхронизируются через
+    asyncio.Lock, чтобы избежать конфликтов при параллельном запуске
+    тестов.
+
+    Возвращает
+    ---------
+    Callable[[list[dict], str, dict | None], Coroutine[None, None, None]]
+        Асинхронную функцию для записи bulk-данных в Elasticsearch.
     """
 
-    async def inner(data: list[dict], index: str = "", mapping: dict = None):
-        """Записать данные в индекс и обновить его."""
-        await _recreate_index(
-            es_client, index, mapping
-        )
-        _, errors = await async_bulk(client=es_client, actions=data)
-        if errors:
-            raise RuntimeError("Ошибка записи данных в Elasticsearch")
+    async def inner(data: list[dict], index: str = "",
+                    mapping: dict = None) -> None:
+        """Записать bulk-данные в индекс Elasticsearch.
 
-        await es_client.indices.refresh(index=index)
+        Синхронизирует доступ через `es_write_lock`, создаёт индекс
+        при необходимости, загружает документы, обновляет индекс.
+
+        Параметры
+        ---------
+        data: list[dict]
+            Список bulk-документов Elasticsearch.
+        index: str
+            Имя индекса для записи данных.
+        mapping: dict | None
+            Опциональный маппинг для создания индекса.
+
+        Возвращает
+        ---------
+        None
+
+        Вызывает исключения
+        ------------------
+        RuntimeError
+            Если при загрузке документов в Elasticsearch
+            возникли ошибки.
+        """
+        async with es_write_lock:
+            client = es_client_factory()
+            try:
+                exists = await client.indices.exists(index=index)
+                if not exists:
+                    if mapping is not None:
+                        await client.indices.create(
+                            index=index, mappings=mapping
+                        )
+                    else:
+                        await client.indices.create(index=index)
+
+                _, errors = await async_bulk(client=client, actions=data)
+                if errors:
+                    raise RuntimeError(
+                        "Ошибка записи данных в Elasticsearch"
+                    )
+
+                await client.indices.refresh(index=index)
+            finally:
+                await client.close()
 
     return inner
 
 
 @pytest_asyncio.fixture(name="es_film_data", scope="session")
 def es_film_data():
-    """Возвращает фабрику данных фильмов для тестов.
+    """Возвращает фабрику для генерации данных фильмов.
 
-    Используется для генерации постоянных наборов фильмов с нужным
-    префиксом запроса.
+    Фикстура предоставляет функцию для создания bulk-документов
+    фильмов с произвольным количеством и префиксом названия.
+
+    Возвращает
+    ---------
+    Callable[[int, str], list[dict]]
+        Функция для генерации bulk-документов фильмов.
     """
 
     def generate_film_data(
-            count: int = 5000, query_prefix: str = "Test movie"
+            count: int = 5000,
+            query_prefix: str = "Test movie"
     ) -> list[dict]:
-        """Генерирует список bulk-документов для заданного запроса.
+        """Генерирует bulk-документы фильмов для Elasticsearch.
 
-        Возвращает данные, готовые для записи в Elasticsearch.
+        Создаёт список документов с поддельными данными фильмов,
+        готовых для загрузки в Elasticsearch.
+
+        Параметры
+        ---------
+        count: int
+            Количество генерируемых фильмов (по умолчанию 5000).
+        query_prefix: str
+            Префикс для названия фильмов (по умолчанию
+            "Test movie").
+
+        Возвращает
+        ---------
+        list[dict]
+            Список bulk-документов Elasticsearch для фильмов.
         """
         return build_film_bulk_data(count, query_prefix)
 
@@ -102,12 +171,24 @@ def es_film_data():
 
 @pytest_asyncio.fixture(name="redis_client", scope="function")
 async def redis_client():
-    """
-    Фикстура для создания и закрытия Redis-клиента.
+    """Создаёт асинхронный Redis-клиент для теста.
 
-    Автоматически очищает базу данных перед тестом.
-    Закрывает соединение после.
+    Фикстура инициализирует клиент, очищает базу данных перед
+    тестом и автоматически закрывает соединение после завершения
+    теста.
+
+    Возвращает
+    ---------
+    redis.asyncio.Redis
+        Асинхронный клиент Redis, подключённый к хосту из
+        конфигурации.
+
+    Вызывает исключения
+    ------------------
+    Exception
+        Если соединение с Redis не удалось установить.
     """
+
     from redis.asyncio import Redis
 
     client = Redis(
@@ -122,124 +203,99 @@ async def redis_client():
 
 @pytest_asyncio.fixture(name="http_session", scope="function")
 async def http_session():
-    """
-    Фикстура для создания и закрытия aiohttp.ClientSession.
+    """Создаёт асинхронную сессию HTTP для тестов API.
 
-    Возвращает только `session`. URL эндпоинта указывается прямо в тестах.
+    Фикстура предоставляет aiohttp.ClientSession для выполнения
+    HTTP-запросов к API-сервису. Автоматически закрывает сессию
+    после завершения теста.
+
+    Возвращает
+    ---------
+    aiohttp.ClientSession
+        Готовая сессия для HTTP-запросов.
+
+    Примечание
+    ----------
+    URL эндпоинта указывается в параметрах запросов внутри
+    тестов.
     """
     session = aiohttp.ClientSession()
     yield session
     await session.close()
 
 
-async def fetch_all_pages(
-    session: aiohttp.ClientSession,
-    url: str,
-    params: dict | None = None,
-    page_size: int = 100,
-) -> dict[str, object]:
-    """
-    Получить все элементы, постранично обходя API.
-
-    Если точка API разрешает максимум 100 записей на страницу, то
-    метод делает несколько последовательных запросов, пока не соберёт
-    все элементы.
-
-    Args:
-        session: aiohttp-клиент для запросов.
-        url: Базовый URL эндпоинта.
-        params: Дополнительные query-параметры.
-        page_size: Запрашиваемый размер страницы, максимум 100.
-
-    Returns:
-        dict[str, object]: Результат с полями `status` и `items`.
-            `status` — HTTP-статус последнего запроса.
-            `items` — список полученных объектов.
-            `error` — необязательное описание ошибки при частичном
-                или неверном ответе.
-    """
-    params = dict(params or {})
-    page_size = min(page_size, 100)
-    params["page_size"] = page_size
-    page_number = 1
-    all_items: list[dict] = []
-
-    while True:
-        params["page_number"] = page_number
-        async with session.get(url, params=params) as response:
-            status = response.status
-            if status != 200:
-                body = await response.json()
-                if (
-                    status == 422
-                    and page_number > 1
-                    and isinstance(body, dict)
-                    and isinstance(body.get("detail"), list)
-                    and any(
-                        isinstance(item, dict)
-                        and item.get("loc") == ["query", "page_number"]
-                        and isinstance(item.get("msg"), str)
-                        and "less than or equal to" in item.get("msg")
-                        for item in body["detail"]
-                    )
-                ):
-                    break
-
-                return {
-                    "status": status,
-                    "items": all_items,
-                    "error": body,
-                }
-
-            page = await response.json()
-
-        if not isinstance(page, list):
-            return {
-                "status": 500,
-                "items": all_items,
-                "error": "Ожидался список данных на каждой странице",
-            }
-
-        all_items.extend(page)
-        if len(page) < page_size:
-            break
-
-        page_number += 1
-
-    return {
-        "status": 200,
-        "items": all_items,
-    }
-
-
 @pytest_asyncio.fixture(name="es_test_films", scope="function")
-async def es_test_films(es_write_data, es_film_data):
-    """Заполняет Elasticsearch тестовыми фильмами перед запуском.
+async def es_test_films(
+    es_write_data, es_film_data, es_client_factory
+):
+    """Подготавливает Elasticsearch с тестовыми фильмами.
 
-    Создаёт набор из 5000 документов и загружает его в тестовый индекс.
+    Фикстура создаёт и пересоздаёт индекс фильмов, загружает
+    набор из 5000 тестовых документов фильмов.
+
+    Параметры
+    ---------
+    es_write_data: Callable
+        Фикстура для записи данных в Elasticsearch.
+    es_film_data: Callable
+        Фикстура для генерации данных фильмов.
+    es_client_factory: Callable
+        Фабрика для создания клиента Elasticsearch.
+
+    Возвращает
+    ---------
+    None
     """
-    bulk_query = es_film_data(count=5000, query_prefix="Test movie")
+    bulk_query = es_film_data(
+        count=5000, query_prefix="Test movie"
+    )
+    # Пересоздаём индекс для чистого набора данных.
+    tmp = es_client_factory()
+    try:
+        await recreate_index(tmp, test_settings.es_film_index,
+                             ES_FILM_MAPPING)
+    finally:
+        await tmp.close()
     await es_write_data(
         bulk_query,
         index=test_settings.es_film_index,
-        mapping=ES_FILM_MAPPING
+        mapping=ES_FILM_MAPPING,
     )
 
 
 @pytest_asyncio.fixture(name="es_genre_data", scope="session")
 def es_genre_data():
-    """Возвращает фабрику данных жанров для тестов.
+    """Возвращает фабрику для генерации данных жанров.
 
-    Используется для генерации постоянных наборов жанров с нужным
-    префиксом запроса.
+    Фикстура предоставляет функцию для создания bulk-документов
+    жанров с произвольным количеством и префиксом названия.
+
+    Возвращает
+    ---------
+    Callable[[int, str], list[dict]]
+        Функция для генерации bulk-документов жанров.
     """
 
     def generate_genre_data(
-            count: int = 5000, query_prefix: str = "Genre"
+            count: int = 5000,
+            query_prefix: str = "Genre"
     ) -> list[dict]:
-        """Генерирует список bulk-документов для заданного запроса.
+        """Генерирует bulk-документы жанров для Elasticsearch.
 
-        Возвращает данные, готовые для записи в Elasticsearch.
+        Создаёт список документов с поддельными данными жанров,
+        готовых для загрузки в Elasticsearch.
+
+        Параметры
+        ---------
+        count: int
+            Количество генерируемых жанров (по умолчанию 5000).
+        query_prefix: str
+            Префикс для названия жанра (по умолчанию "Genre").
+
+        Возвращает
+        ---------
+        list[dict]
+            Список bulk-документов Elasticsearch для жанров.
         """
         return build_genre_bulk_data(count, query_prefix)
 
@@ -247,33 +303,77 @@ def es_genre_data():
 
 
 @pytest_asyncio.fixture(name="es_test_genres", scope="function")
-async def es_test_genres(es_write_data, es_genre_data):
-    """Заполняет Elasticsearch тестовыми жанрами перед запуском.
+async def es_test_genres(
+    es_write_data, es_genre_data, es_client_factory
+):
+    """Подготавливает Elasticsearch с тестовыми жанрами.
 
-    Создаёт набор из 5000 документов и загружает его в тестовый индекс.
+    Фикстура создаёт и пересоздаёт индекс жанров, загружает набор
+    из 5000 тестовых документов жанров.
+
+    Параметры
+    ---------
+    es_write_data: Callable
+        Фикстура для записи данных в Elasticsearch.
+    es_genre_data: Callable
+        Фикстура для генерации данных жанров.
+    es_client_factory: Callable
+        Фабрика для создания клиента Elasticsearch.
+
+    Возвращает
+    ---------
+    None
     """
-    bulk_query = es_genre_data(count=5000, query_prefix="Genre")
+    bulk_query = es_genre_data(
+        count=5000, query_prefix="Genre"
+    )
+    tmp = es_client_factory()
+    try:
+        await recreate_index(tmp, test_settings.es_genre_index,
+                             ES_GENRE_MAPPING)
+    finally:
+        await tmp.close()
     await es_write_data(
         bulk_query,
         index=test_settings.es_genre_index,
-        mapping=ES_GENRE_MAPPING
+        mapping=ES_GENRE_MAPPING,
     )
 
 
 @pytest_asyncio.fixture(name="es_person_data", scope="session")
 def es_person_data():
-    """Возвращает фабрику данных персон для тестов.
+    """Возвращает фабрику для генерации данных персон.
 
-    Используется для генерации постоянных наборов персон с нужным
-    префиксом запроса.
+    Фикстура предоставляет функцию для создания bulk-документов
+    персон с произвольным количеством и префиксом названия.
+
+    Возвращает
+    ---------
+    Callable[[int, str], list[dict]]
+        Функция для генерации bulk-документов персон.
     """
 
     def generate_person_data(
-            count: int = 5000, query_prefix: str = "Test person"
+            count: int = 5000,
+            query_prefix: str = "Test person"
     ) -> list[dict]:
-        """Генерирует список bulk-документов для заданного запроса.
+        """Генерирует bulk-документы персон для Elasticsearch.
 
-        Возвращает данные, готовые для записи в Elasticsearch.
+        Создаёт список документов с поддельными данными персон,
+        готовых для загрузки в Elasticsearch.
+
+        Параметры
+        ---------
+        count: int
+            Количество генерируемых персон (по умолчанию 5000).
+        query_prefix: str
+            Префикс для названия персоны (по умолчанию
+            "Test person").
+
+        Возвращает
+        ---------
+        list[dict]
+            Список bulk-документов Elasticsearch для персон.
         """
         return build_person_bulk_data(count, query_prefix)
 
@@ -281,14 +381,38 @@ def es_person_data():
 
 
 @pytest_asyncio.fixture(name="es_test_persons", scope="function")
-async def es_test_persons(es_write_data, es_person_data):
-    """Заполняет Elasticsearch тестовыми персонами перед запуском.
+async def es_test_persons(
+    es_write_data, es_person_data, es_client_factory
+):
+    """Подготавливает Elasticsearch с тестовыми персонами.
 
-    Создаёт набор из 5000 документов и загружает его в тестовый индекс.
+    Фикстура создаёт и пересоздаёт индекс персон, загружает набор
+    из 5000 тестовых документов персон.
+
+    Параметры
+    ---------
+    es_write_data: Callable
+        Фикстура для записи данных в Elasticsearch.
+    es_person_data: Callable
+        Фикстура для генерации данных персон.
+    es_client_factory: Callable
+        Фабрика для создания клиента Elasticsearch.
+
+    Возвращает
+    ---------
+    None
     """
-    bulk_query = es_person_data(count=5000, query_prefix="Test person")
+    bulk_query = es_person_data(
+        count=5000, query_prefix="Test person"
+    )
+    tmp = es_client_factory()
+    try:
+        await recreate_index(tmp, test_settings.es_person_index,
+                             ES_PERSON_MAPPING)
+    finally:
+        await tmp.close()
     await es_write_data(
         bulk_query,
         index=test_settings.es_person_index,
-        mapping=ES_PERSON_MAPPING
+        mapping=ES_PERSON_MAPPING,
     )

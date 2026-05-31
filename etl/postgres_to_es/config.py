@@ -29,8 +29,14 @@ class Settings(BaseSettings):
     elasticsearch_port: int = Field(
         default=9200, validation_alias="ELASTICSEARCH_PORT"
     )
-    elasticsearch_index: str = Field(
+    elasticsearch_films_index: str = Field(
         default="movies", validation_alias="ELASTICSEARCH_FILMS_INDEX"
+    )
+    elasticsearch_genres_index: str = Field(
+        default="genres", validation_alias="ELASTICSEARCH_GENRES_INDEX"
+    )
+    elasticsearch_persons_index: str = Field(
+        default="persons", validation_alias="ELASTICSEARCH_PERSONS_INDEX"
     )
 
     # Настройки ETL
