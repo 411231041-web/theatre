@@ -73,7 +73,7 @@ class BaseService(ABC, Generic[TDetail, TShort]):
         cache_key: str,
         model: TDetail,
     ) -> None:
-        """Сохранить модель в кэш."""
+        """Сохранить модель в кэше."""
         await self.cache.set_model(
             cache_key,
             model,
@@ -85,7 +85,7 @@ class BaseService(ABC, Generic[TDetail, TShort]):
         cache_key: str,
         data: dict | list,
     ) -> None:
-        """Сохранить JSON в кэш."""
+        """Сохранить JSON в кэше."""
         await self.cache.set_json(
             cache_key,
             data,

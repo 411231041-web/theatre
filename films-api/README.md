@@ -63,7 +63,7 @@ FastAPI будет доступен по адресу:
 
 ## Локальный запуск FastAPI
 
-Из папки `fastapi`:
+Из папки `films-api`:
 
 ```bash
 python -m venv .venv
@@ -149,7 +149,7 @@ curl -i -g "http://localhost:8001/api/v1/persons/search?query=george&filter[role
 
 ## Тесты
 
-Из папки `fastapi`:
+Из папки `films-api`:
 
 ```bash
 PYTHONPATH=src python -m pytest -q tests

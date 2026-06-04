@@ -6,7 +6,7 @@ services:
     env_file:
       - ../../.env
     environment:
-      - SERVICE_URL=http://fastapi-dev:8000
+      - SERVICE_URL=http://films-api-dev:8000
       - ES_ID_FIELD=id
       - ES_INDEX_MAPPING=/app/testdata/es_mapping.py
       - PYTHONPATH=/app
@@ -15,14 +15,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      fastapi-dev:
+      films-api-dev:
         condition: service_healthy
     command: pytest -v /app
     volumes:
       - ../../tests/functional:/app
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.2
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.1
     environment:
       - discovery.type=single-node
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
@@ -39,7 +39,7 @@ services:
       - es-test-data:/usr/share/elasticsearch/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -49,9 +49,9 @@ services:
     volumes:
       - redis-test-data:/data
 
-  fastapi-dev:
+  films-api-dev:
     build:
-      context: ../../fastapi
+      context: ../../films-api
       dockerfile: Dockerfile.dev
     ports:
       - "8000:8000"

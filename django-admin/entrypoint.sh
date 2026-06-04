@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 set -e
 
 # Переключаемся в рабочую директорию приложения
-cd /opt/app || exit 1
+cd /app || exit 1
 
 # Выполняем миграции и собираем статические файлы
 python manage.py migrate --noinput
